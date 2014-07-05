@@ -77,7 +77,7 @@ enum nss_status _nss_snow_endhostent(void)
 	return NSS_STATUS_SUCCESS;
 }
 
-enum nss_status _nss_snow_gethostent_r(struct hostent *result, char *buf, size_t buflen, int *errnop, int *h_errnop)
+enum nss_status _nss_snow_gethostent_r(struct hostent * result, char * buf, size_t buflen, int *errnop, int *h_errnop)
 {
 	// get next host entry: just return NSS_STATUS_NOTFOUND
 	*errnop = ENOENT;
@@ -99,7 +99,7 @@ static ssize_t nss_snow_get_response(const void* sendbuf, size_t sendbuf_size, v
             sa.sin_family = AF_INET;
             sa.sin_addr.s_addr = htonl(0x7f000001); // 127.0.0.1
             sa.sin_port = htons(8); // TODO: don't hard code port (or address)
-            if(sendto(sock, sendbuf, sendbuf_size, 0, (struct sockaddr*)&sa, sizeof(sa)) == sendbuf_size) {
+            if(sendto(sock, sendbuf, sendbuf_size, 0, (struct sockaddr*)&sa, sizeof(sa)) == (ssize_t)sendbuf_size) {
                 if((ret_val = recv(sock, recvbuf, recvbuf_size, 0)) <= 0)
                     if(DEBUG) perror("E: recv()");
             } else {
@@ -171,7 +171,7 @@ enum nss_status _nss_snow_gethostbyname_r(const char * name, struct hostent * re
 	
 	enum nss_status ret_val = NSS_STATUS_UNAVAIL;
 	ssize_t nbytes = nss_snow_get_response(name, namelen, buf, namelen + IPv4ADDR_SIZE, 90, errnop);
-	if(nbytes != namelen + IPv4ADDR_SIZE) {
+	if(nbytes != (ssize_t)(namelen + IPv4ADDR_SIZE)) {
 		if(DEBUG) printf("size err: nbytes %ld wanted %ld\n", nbytes, namelen+IPv4ADDR_SIZE);
 		if(*errnop == ETIMEDOUT) {
 			ret_val = NSS_STATUS_TRYAGAIN;

@@ -10,16 +10,25 @@ ifeq ($(OS),Windows_NT)
 	CXXFLAGS+=-DWINDOWS -DWINSOCK -DNOCRYPT -D_WINNT_WIN32=0x500 -DNO_UPNP -DNO_NATPMP
 	SNOW_OBJECTS+=applink.o
 	SNOW_LDFLAGS+=-lws2_32 -liphlpapi -L/c/msys/1.0/home/user/openssl-1.0.1e/dist/lib
-	SNOW_EXECUTABLE=snowd.exe
+	SNOW_BINARY=snowd.exe
 else
 	SNOW_LDFLAGS+=-lpthread
-	SNOW_EXECUTABLE=snowd
+	SNOW_BINARY=snowd
 endif
 
-all: $(SNOW_EXECUTABLE)
-	
-$(SNOW_EXECUTABLE): $(SNOW_OBJECTS) 
-	$(CXX) $(SNOW_OBJECTS) $(SNOW_LDFLAGS) -o $(SNOW_EXECUTABLE)
+SNOW_NSS_BINARY=libnss_snow.so.2
+SNOW_NSS_TEST=snow_nss_test
+
+all: $(SNOW_BINARY) nss_snow/$(SNOW_NSS_BINARY) nss_snow/$(SNOW_NSS_TEST)
+
+nss_snow/$(SNOW_NSS_BINARY): nss_snow/nss_snow.c
+	$(CC) $(CFLAGS) -Wno-unused-parameter -Os -fPIC -shared -o nss_snow/${SNOW_NSS_BINARY} -Wl,-soname,${SNOW_NSS_BINARY} nss_snow/nss_snow.c
+
+nss_snow/$(SNOW_NSS_TEST): nss_snow/nss_snow.c
+	$(CC) $(CFLAGS) -Wno-unused-parameter -Os -DDEBUG=1 -DNSS_SNOW_MAIN_TEST nss_snow/nss_snow.c -o nss_snow/${SNOW_NSS_TEST}
+
+$(SNOW_BINARY): $(SNOW_OBJECTS) 
+	$(CXX) $(SNOW_OBJECTS) $(SNOW_LDFLAGS) -o $(SNOW_BINARY)
 
 applink.o:
 	$(CC) $(CFLAGS) /c/Program\ Files\ \(x86\)/mingw-builds/x32-4.8.1-posix-dwarf-rev5/mingw32/lib/gcc/i686-w64-mingw32/4.8.1/include/openssl/applink.c -o applink.o
@@ -29,6 +38,6 @@ applink.o:
 	
 
 clean:
-	rm common/*.o snow/*.o $(SNOW_EXECUTABLE)
+	rm common/*.o snow/*.o $(SNOW_BINARY) nss_snow/${SNOW_NSS_BINARY} nss_snow/${SNOW_NSS_TEST}
 	
 	
