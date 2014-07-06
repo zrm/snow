@@ -162,7 +162,7 @@ void peer_init::attempt_new_connection(const hashkey& hk, const ip_info& ip, std
 				// in that case just choosing a different local port (and sending HOLEPUNCH_ADDRS) would be likely to succeed
 			// the existing mitigation is that if all the attempts die immediately then new_connect_info will do the retries (i.e. counter-CONNECT), which should work much of the time, but could be improved
 		}
-	} catch(const e_check_sock_err& e) {
+	} catch(const check_err_exception& e) {
 		dout() << "new_connect_info failed to get socket from dispatch for remote addr " << remote_addr << ": " << e;
 		// TODO: deal with failed socket, what are the possible causes? maybe nothing to be done?
 		// could be peer addr is broken (e.g. IPv6 on host with no IPv6 addr or some invalid address), what else?

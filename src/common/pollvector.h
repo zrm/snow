@@ -43,10 +43,16 @@
 #ifndef POLLVECTOR_H
 #define POLLVECTOR_H
 #include<cstdint>
+#ifdef __linux
+#define PV_USE_EPOLL
+#endif
 #ifdef WINSOCK
 #include<Winsock2.h>
 #include<memory>
 #include"common.h"
+#elif defined(PV_USE_EPOLL)
+#include<sys/epoll.h>
+#include<unistd.h>
 #else
 #include<poll.h>
 #endif
@@ -103,6 +109,7 @@ struct wsa_event
 };
 #endif
 
+
 // different OS provide different polling functions (select/poll/epoll/kqueue), and the most widely supported ones are terrible (e.g. select())
 // so this creates an abstraction around them all with an interface that can take advantage of epoll/kqueue and then uses internally whatever is supported
 // constructor takes a cleanup function which will be called whenever an object is purged, to do whatever cleanup operations may be necessary
@@ -125,6 +132,8 @@ class pollvector
 		// primary disadvantage is locking, but maybe do some profiling to see if it's serious (or implement lock-free tqueue)
 #if defined(PV_USE_EPOLL)
 	int epfd;
+	epoll_event * epevents;
+	size_t epevents_size; // number of events allocated in events array
 #elif defined(PV_USE_KQUEUE)
 	int kq;
 #elif defined(WINSOCK)
@@ -170,7 +179,13 @@ class pollvector
 		winsock_peer *peer_id;
 		pv_data(T &&t, const std::function<void(size_t,pvevent,sock_err)> &f, SOCKET s, size_t idx)
 			: tdata(std::forward<T>(t)), event_fn(f), events(pvevent::none), sock(s), index(new size_t(idx)), peer_id(nullptr) {}
-#else
+#elif defined(PV_USE_EPOLL)
+		epoll_event epevents;
+		int sock;
+		inline void setidx(size_t idx) { (void) (sizeof(size_t)>4 ? (epevents.data.u64 = idx) : (epevents.data.u32 = idx)); }
+		pv_data(T &&t, const std::function<void(size_t,pvevent,sock_err)> &f, int sd, pvevent ev, size_t idx)
+			: tdata(std::forward<T>(t)), event_fn(f), sock(sd) { epevents.events = ev.event; setidx(idx); }
+#else // poll()
 		pv_data(T &&t, const std::function<void(size_t,pvevent,sock_err)> &f) : tdata(std::forward<T>(t)), event_fn(f) {}
 #endif
 		// + xyz implementation specific data for various others, e.g. sock fd
@@ -184,7 +199,7 @@ class pollvector
 	// note: cleanup_defunct_connections() also invalidates indexes of elements *not* being removed
 	bool cleanup_defunct_connections();
 public:
-	pollvector(const std::function<void(size_t)> &cleanup, size_t min_dynamic_start, const char* pv_name) : cleanup_handler(cleanup), dynamic_start(min_dynamic_start), pvname(pv_name) {}
+	pollvector(const std::function<void(size_t)> &cleanup, size_t min_dynamic_start, const char* pv_name);
 	~pollvector();
 	T& operator[](size_t index) {
 		if(index >= size()) {
@@ -198,8 +213,12 @@ public:
 	T& back() { return data.back().tdata; }
 	size_t size() { return data.size(); }
 	void event_exec_wait(int timeout);
-	void set_fd(size_t index, csocket::sock_t fd);
+	// note: if you call set_fd(INVALID_SOCKET) because you will close the socket yourself, do this *before* closing the socket
+		// some implementations (e.g. epoll) require the socket to be unregistered, and can do strange things if you don't
+		// in particular, if the socket was dup()'d then until the dup is closed pollvector will continue receiving events which will go to the wrong socket
+	void set_fd(size_t index, csocket::sock_t fd, bool close_existing = false);
 	csocket::sock_t get_fd(size_t index);
+	pvevent get_events(size_t index) const;
 	void set_events(size_t index, pvevent events);
 	void add_events(size_t index, pvevent events);
 	void clear_events(size_t index, pvevent events);

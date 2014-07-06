@@ -49,7 +49,7 @@ const pvevent pvevent::none(0);
 #if defined(PV_USE_EPOLL)
 const pvevent pvevent::read(EPOLLIN);
 const pvevent pvevent::write(EPOLLOUT);
-const pvevent pvevent::error(EPOLLERR);
+const pvevent pvevent::error(EPOLLERR | EPOLLHUP);
 #elif defined(PV_USE_KQUEUE)
 // TODO: does kqueue use xor filter values too or do we have to do this?
 const pvevent pvevent::read(1);
@@ -63,7 +63,7 @@ const pvevent pvevent::error(~(FD_READ | FD_ACCEPT | FD_WRITE | FD_CONNECT | FD_
 // poll()
 const pvevent pvevent::read(POLLIN);
 const pvevent pvevent::write(POLLOUT);
-const pvevent pvevent::error(POLLERR);
+const pvevent pvevent::error(POLLERR | POLLHUP);
 #endif
 
 void print_poll_error(const pollfd& p)
@@ -79,3 +79,16 @@ void print_poll_error(const pollfd& p)
 #endif
 }
 
+#ifdef PV_USE_EPOLL
+void print_epoll_error(uint32_t events)
+{
+	if(events & EPOLLIN) dout() << "event was EPOLLIN";
+	if(events & EPOLLOUT) dout() << "event was EPOLLOUT";
+	if(events & EPOLLRDHUP) dout() << "event was EPOLLRDHUP";
+	if(events & EPOLLHUP) dout() << "event was EPOLLHUP";
+	if(events & EPOLLPRI) dout() << "event was EPOLLPRI";
+	if(events & EPOLLERR) dout() << "event was EPOLLERR";
+	if(events & EPOLLET) dout() << "event was EPOLLET";
+	if(events & EPOLLONESHOT) dout() << "event was EPOLLONESHOT";
+}
+#endif

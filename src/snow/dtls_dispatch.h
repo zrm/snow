@@ -130,7 +130,7 @@ class dtls_dispatch
 	void icmp_unreachable(const ip_info& local, const ip_info& remote);
 	void do_shutdown_thread_pending();
 	void do_shutdown_thread();
-	void create_socket(const sockaddrunion& su, uint32_t flags = 0); // throws e_check_sock_err
+	void create_socket(const sockaddrunion& su, uint32_t flags = 0); // throws check_err_exception
 	void send_holepunch(const sockaddrunion& local, const sockaddrunion& remote);
 
 	void peer_socket_event(size_t index, pvevent event, sock_err err);

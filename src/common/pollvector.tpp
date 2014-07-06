@@ -43,9 +43,30 @@
 #include "pollvector.h"
 
 template<class T>
+pollvector<T>::pollvector(const std::function<void(size_t)> &cleanup, size_t min_dynamic_start, const char* pv_name) : cleanup_handler(cleanup), dynamic_start(min_dynamic_start), pvname(pv_name) {
+#ifdef PV_USE_EPOLL
+	const unsigned default_size = 8;
+	check_err(epfd = epoll_create(default_size), "Could not create epoll descriptor");
+	epevents_size = default_size;
+	epevents = reinterpret_cast<epoll_event*>(malloc(sizeof(epoll_event) * epevents_size));
+	if(epevents == nullptr) throw std::bad_alloc();
+#endif
+}
+
+template<class T>
 pollvector<T>::~pollvector()
 {
-#ifdef WINSOCK
+#ifdef PV_USE_EPOLL
+	while(close(epfd)!=0) {
+		if(errno != EINTR) {
+			eout_perr() << pvname << ": Failed to close epoll descriptor";
+			break;	
+		} else {
+			dout() << pvname << ": EINTR closing epoll descriptor";
+		}
+	}
+	free(epevents);
+#elif defined(WINSOCK)
 	// this is a bit particular, we have to:
 		// 1) cancel the events for every entry (so that every peer_id index is SIZE_MAX and has cancel in tqueue and every event occurrence has either been added or will not be)
 		// 2) execute every entry in tqueue, which for real events will do nothing (invalid index) and for cancel events will delete the peer_id as required
@@ -58,11 +79,23 @@ pollvector<T>::~pollvector()
 #endif
 }
 
+
 template<class T> template<class... Args>
 void pollvector<T>::emplace_back(csocket::sock_t sock, pvevent event, const std::function<void(size_t,pvevent,sock_err)> &ef, Args&&... args)
 {
 #if defined(PV_USE_EPOLL)
-	// [add to epoll]
+	if(data.size() >= epevents_size) {
+		epevents_size = epevents_size ? epevents_size*2 : 8;
+		epevents = reinterpret_cast<epoll_event*>(realloc(epevents, sizeof(epoll_event)*epevents_size));
+		if(epevents==nullptr) throw std::bad_alloc();
+	}
+	data.emplace_back(std::forward<Args>(args)..., ef, sock, event, data.size());
+	if(sock >= 0) {
+		if(epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &data.back().epevents) < 0) {
+			data.pop_back();
+			throw check_err_exception("epoll_ctl adding socket for new pollvector element");
+		}
+	}
 #elif defined(PV_USE_KQUEUE)
 	// [add to kqueue]
 #elif defined(WINSOCK)
@@ -163,12 +196,20 @@ void pollvector<T>::process_winsock_event(winsock_event&& ev)
 #endif
 
 template<class T>
-void pollvector<T>::set_fd(size_t index, csocket::sock_t fd)
+void pollvector<T>::set_fd(size_t index, csocket::sock_t fd, bool close_existing)
 {
+	csocket close(close_existing ? get_fd(index) : INVALID_SOCKET); // destructor will close sock after epoll_ctl etc.
 #ifdef WINSOCK
 	dout() << pvname <<  " socket " << data[index].sock << " at " << index << " changed to " << fd;
 	data[index].sock = fd;
 	set_events(index, data[index].events);
+#elif defined(PV_USE_EPOLL)
+	if(data[index].sock >= 0)
+		if(epoll_ctl(epfd, EPOLL_CTL_DEL, data[index].sock, &data[index].epevents) < 0)
+			dout_perr() << pvname << " set_fd failed to remove old fd " << data[index].sock;
+	data[index].sock = fd;
+	if(fd >= 0)
+		check_err(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &data[index].epevents), "epoll_ctl adding socket for set_fd()");
 #else // poll()
 	poll[index].fd = fd;
 #endif
@@ -177,10 +218,21 @@ void pollvector<T>::set_fd(size_t index, csocket::sock_t fd)
 template<class T>
 csocket::sock_t pollvector<T>::get_fd(size_t index)
 {
-#ifdef WINSOCK
+#if defined(WINSOCK) || defined(PV_USE_EPOLL)
 	return data[index].sock;
 #else
 	return poll[index].fd;
+#endif
+}
+template<class T>
+pvevent pollvector<T>::get_events(size_t index) const
+{
+#ifdef WINSOCK
+	return data[index].events;
+#elif defined(PV_USE_EPOLL)
+	return data[index].epevents.events;
+#else // poll()
+	return poll[index].events;
 #endif
 }
 template<class T>
@@ -201,6 +253,12 @@ void pollvector<T>::set_events(size_t index, pvevent events)
 		}
 		data[index].peer_id = new winsock_peer(this, data[index].index, data[index].event_handle.ev);
 	}
+#elif defined(PV_USE_EPOLL)
+	if(data[index].epevents.events != events.event) {
+		data[index].epevents.events = events.event;
+		if(data[index].sock >= 0)
+			check_err(epoll_ctl(epfd, EPOLL_CTL_MOD, data[index].sock, &data[index].epevents), "epoll_ctl modifying socket events");
+	}
 #else
 	poll[index].events = events.event;
 #endif
@@ -208,8 +266,8 @@ void pollvector<T>::set_events(size_t index, pvevent events)
 template<class T>
 void pollvector<T>::add_events(size_t index, pvevent events)
 {
-#ifdef WINSOCK
-	set_events(index, data[index].events | events);
+#if defined(WINSOCK) || defined(PV_USE_EPOLL)
+	set_events(index, get_events(index) | events);
 #else
 	poll[index].events |= events.event;
 #endif
@@ -217,9 +275,9 @@ void pollvector<T>::add_events(size_t index, pvevent events)
 template<class T>
 void pollvector<T>::clear_events(size_t index, pvevent events)
 {
-#ifdef WINSOCK
-	set_events(index, data[index].events.event & (~events.event));
-#else
+#if defined(WINSOCK) || defined(PV_USE_EPOLL)
+	set_events(index, get_events(index).event & (~events.event));
+#else // poll()
 	poll[index].events &= ~events.event;
 #endif
 }
@@ -230,6 +288,11 @@ void pollvector<T>::mark_defunct(size_t index)
 #ifdef WINSOCK
 	data[index].events = pvevent::none;
 	cancel_events(index);
+#elif defined(PV_USE_EPOLL)
+	data[index].epevents.events = 0;
+	if(data[index].sock >= 0)
+		if(epoll_ctl(epfd, EPOLL_CTL_DEL, data[index].sock, &data[index].epevents) < 0)
+			dout_perr() << pvname << " failed to EPOLL_CTL_DEL socket";
 #else
 	poll[index].events = pvevent::none;
 #endif
@@ -256,8 +319,6 @@ bool pollvector<T>::cleanup_defunct_connections()
 			continue;
 		}
 		cleanup_handler(remove_index);
-		// give socket to csocket whose destructor will close it (if it is not INVALID_SOCKET)
-		csocket(get_fd(remove_index));
 		reorder_remove(remove_index);
 	} while(defunct_connections.size() > 0);
 	return true;
@@ -270,13 +331,30 @@ void pollvector<T>::reorder_remove(size_t remove_index)
 		dout() << pvname << " socket " << get_fd(remove_index) << " removed from " << remove_index;
 	else
 		dout() << pvname << " socket " << get_fd(data.size()-1) << " moved from " << (data.size()-1) << " to " << remove_index << " replacing " << get_fd(remove_index);
+	// give socket to csocket whose destructor will close it (if it is not INVALID_SOCKET)
+	// note that this causes close() to be called after e.g. epoll_ctl(EPOLL_CTL_DEL) below as required
+	csocket(get_fd(remove_index));
 #ifdef WINSOCK
 	cancel_events(remove_index);
 	if(data.back().peer_id != nullptr)
 		*data.back().index = remove_index;
 	if(data[remove_index].peer_id != nullptr)
 		*data[remove_index].index = SIZE_MAX;
-#else
+#elif defined(PV_USE_EPOLL)
+	if(data[remove_index].sock >= 0) {
+		if(epoll_ctl(epfd, EPOLL_CTL_DEL, data[remove_index].sock, &data[remove_index].epevents) < 0)
+			dout_perr() << pvname << " reorder_remove failed to remove fd " << data[remove_index].sock;
+	}
+	data.back().setidx(remove_index);
+	if(remove_index != data.size()-1 && data.back().sock >= 0)
+		if(epoll_ctl(epfd, EPOLL_CTL_MOD, data.back().sock, &data.back().epevents) < 0)
+			dout_perr() << pvname << " epoll_ctl failed to move existing socket";
+	if(epevents_size > (data.size()<<2)) {
+		epevents_size>>=1;
+		epevents = reinterpret_cast<epoll_event*>(realloc(epevents, sizeof(epoll_event)*epevents_size));
+		if(epevents == nullptr && epevents_size) throw std::bad_alloc();
+	}
+#else // poll()
 	poll[remove_index] = std::move(poll.back());
 	poll.pop_back();
 #endif
@@ -288,6 +366,7 @@ void pollvector<T>::reorder_remove(size_t remove_index)
 
 struct pollfd;
 void print_poll_error(const pollfd& p);
+void print_epoll_error(uint32_t events);
 
 template<class T>
 void pollvector<T>::event_exec_wait(int timeout)
@@ -316,13 +395,38 @@ void pollvector<T>::event_exec_wait(int timeout)
 		dout() << "event_exec_wait caught: " << e;
 	}
 	// dout() << "Doing event_exec_wait() with WINSOCK select() timeout " << timeout << ", sds: " << socket_map;
+#elif defined(PV_USE_EPOLL)
+	int numevents = epoll_wait(epfd, epevents, epevents_size, timeout);
+	while(numevents < 0 && errno==EINTR)
+		numevents = epoll_wait(epfd, epevents, epevents_size, timeout);
+	if(numevents < 0) {
+		eout_perr() << pvname << " pollvector epoll_wait()";
+		throw check_err_exception("epoll_wait()");
+	}
+	for(ssize_t j=0; j < numevents; ++j) {
+		size_t idx = sizeof(size_t)>4 ? epevents[j].data.u64 : epevents[j].data.u32;
+		if(idx >= data.size()) {
+			// most likely cause of this is adding sock to pv, dup() it and close original before removing from pv
+			eout() << "BUG: pollvector logic error or " << pvname << " did not properly remove epoll descriptor before closing";
+			continue;
+		}
+		if(epevents[j].events & (~(EPOLLIN | EPOLLOUT))) {
+			if(data[idx].event_fn != nullptr) {
+				data[idx].event_fn(idx, pvevent::error, sock_err::get_error(get_fd(idx)));
+			} else {
+				// call sock_err::get_error() to at least clear the error and prevent a polling loop:
+				wout() << "pollvector epoll error without event function at index " << idx << " for fd " << get_fd(idx) << ": " << sock_err::get_error(get_fd(idx));
+			}
+		} else if(epevents[j].events != 0 && data[idx].event_fn != nullptr) {
+			data[idx].event_fn(idx, pvevent(epevents[j].events & (EPOLLIN|EPOLLOUT)), sock_err::enoerr);
+		}
+	}
 #else // poll()
 	int numevents = ::poll(poll.data(), poll.size(), timeout);
 	if(is_sock_err(numevents))
 	{
 		eout() << pvname << " pollvector poll(): " << sock_err::get_last();
-		// TODO: handle error (mainly OOM or too many file descriptors)
-			// (probably throw exception)
+		throw e_check_sock_err("poll()", true);
 	}
 	for(size_t i=0; i < poll.size(); ++i) {
 		if(poll[i].revents & (~(POLLIN | POLLOUT))) {

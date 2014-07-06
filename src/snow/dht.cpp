@@ -809,15 +809,6 @@ void dht::dht_connect(std::shared_ptr<dht_peer> dntls)
 	}
 }
 
-void dht::add_peer(std::shared_ptr<dht_peer> &&ptr, csocket::sock_t sd)
-{
-	connected_peers[ptr->nat_ipaddr] = ptr;
-	peer_map[ptr->fingerprint].dht_connected = true;
-	ptr->index = connections.size();
-	connections.emplace_back(sd, pvevent::read, peer_socket_event_function, std::move(ptr));
-	send_hello(*connections.back());
-}
-
 void dht::process_dht_incoming()
 {
 	if(!running)
@@ -848,6 +839,19 @@ void dht::process_dht_incoming()
 			dout() << "disconnected incoming DHT connection because NAT IP (" << ss_ipaddr(newpeer.nat_addr) << ") was already connected";
 		}
 		dht_pending_map.erase(it);
+	}
+}
+
+void dht::add_peer(std::shared_ptr<dht_peer> &&ptr, csocket::sock_t sd)
+{
+	try {
+		ptr->index = connections.size();
+		connections.emplace_back(sd, pvevent::read, peer_socket_event_function, std::move(ptr));
+		connected_peers[connections.back()->nat_ipaddr] = connections.back();
+		peer_map[connections.back()->fingerprint].dht_connected = true;
+		send_hello(*connections.back());
+	} catch(const check_err_exception& e) {
+		wout() << "Failed to add DHT peer: " << e;
 	}
 }
 
