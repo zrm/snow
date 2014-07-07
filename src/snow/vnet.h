@@ -96,11 +96,12 @@ struct vnet_peer : public dtls_peer
 	uint16_t dhtport; // peer's NBO DHT port
 	uint16_t dtls_srcport; // peer's NBO DTLS default source port
 	unsigned idle_count; // how many heartbeat periods have occurred without any real activity
-	std::chrono::time_point<std::chrono::steady_clock> last_heartbeat; // last heartbeat recv'd (to avoid excessive repetition)
+	std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_sent;
+	std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_received;
 	snow_hello hello; // sometimes this has to be re-sent from here (generally because peer lost the packet)
 	vnet_peer(dtls_ptr&& c, uint16_t pmtu, uint32_t nat, std::vector<ip_info>&& addrs, uint16_t dhtprt, uint16_t srcprt, const ip_info& visible_ip, snow_hello&& h)
 		: conn(std::move(c)), mtu(pmtu), nat_addr(nat), visible_ipaddr(visible_ip), peer_addrs(std::move(addrs)), dhtport(dhtprt), dtls_srcport(srcprt),
-		  idle_count(0), last_heartbeat(std::chrono::steady_clock::now()), hello(std::move(h)) {
+		  idle_count(0), last_heartbeat_sent(std::chrono::steady_clock::now()), last_heartbeat_received(last_heartbeat_sent), hello(std::move(h)) {
 		hello.clear_flag(snow_hello::REQUEST_RETRANSMIT); // should never request retransmit of peer hello from vnet
 	}
 	static vnet* vn;
@@ -138,7 +139,7 @@ private:
 	void mark_remove(vnet_peer &remove) { dispatch->cleanup_peer(remove.self); }
 	void cleanup_address_assignments();
 	void send_dtls_heartbeats();
-	void heartbeat_timeout(std::weak_ptr<vnet_peer>& peer, std::chrono::time_point<std::chrono::steady_clock> sent_ts, size_t retries);
+	void heartbeat_timeout(std::weak_ptr<vnet_peer>& peer, size_t retries);
 	
 	void snow_hello_packet(vnet_peer &peer, dbuf &buf, size_t packetsize);
 	void snow_control_packet(vnet_peer &peer, dbuf &buf, size_t packetsize);
@@ -154,14 +155,13 @@ private:
 	void peer_packet(vnet_peer &peer, dbuf &buf, snow_packet* packet, size_t packetsize);
 public:
 	void set_pointers(dht* d, peer_init* p, nameserv* nst) { dht_thread = d; pinit = p; nameserv_thread = nst; }
-	void operator()(); // thread entrypoint
 	void peer_read_event(vnet_peer& peer, dbuf& udp_buf, size_t udp_len);
 	void tuntap_socket_event(size_t index, pvevent event, sock_err err);
 	void add_peer(dtls_ptr&& conn, snow_hello&& hello, std::vector<packet_buf>& packets, std::vector<ip_info>&& peer_addrs, uint16_t dhtprt, uint16_t srcprt, const ip_info& visible_ip, unsigned peer_mtu, bool primary);
 	void cleanup(vnet_peer &remove);
 	void test_pmtu(vnet_peer &peer);
 	void send_heartbeat(const hashkey& fingerprint);
-	void send_heartbeat(vnet_peer &peer, size_t retries = snow::conf[snow::HEARTBEAT_RETRIES]);
+	void send_heartbeat(vnet_peer &peer, size_t retries = snow::conf[snow::HEARTBEAT_RETRIES], bool is_retry = false);
 	void check_connection(const hashkey& fingerprint) { send_heartbeat(fingerprint) ; }
 	void send_heartbeat_all();
 	void check_all_connections() { send_heartbeat_all(); }

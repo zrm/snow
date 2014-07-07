@@ -57,9 +57,16 @@
 #include"natpmp.h"
 
 // TODO: if there is a verified dup then do heartbeat differently
-	// send heartbeat to both active and dup at the same time
-	// if after 500ms dup has responded and active hasn't, activate dup
-	// if neither has, resend both and check again in 500ms, repeat until one responds or timeout occurs
+	// this requires supporting snow control echo packets in pinit/handshake, but:
+	// when primary gets duplicate, it sends heartbeat/echo to existing and also to dup
+	// if dup responds and active hasn't within e.g. 100ms (ACTIVE_DUP_DELAY_MSECS ?) after that, fail active and activate dup
+	// if active responds, keep active
+	// if neither respond, send another echo to each until one does or timeout
+	// this allows fast fail detection: the problem with short timeouts is the network could be slow or losing packets
+	// which could cause repeated replacement of active with duplicates (and then more handshakes/dups if peer thinks disconnect was unclean)
+	// so instead we require that duplicate be faster than active in order to replace it
+		// and if it happens to be faster because it's using a better path rather than because active is dead, that's fine too
+	// this also allows the heartbeat timeout to be extended a bit when there is no duplicate available, which will improve behavior on slow networks
 
 void add_addr(std::vector<sockaddrunion>& addrs, const sockaddrunion* su, uint32_t nbo_tun_addr)
 {
@@ -216,7 +223,7 @@ void dtls_dispatch::operator ()()
 		int next_timer = timers.exec();
 		if(cleanup_peers())
 			continue; // in case cleanup causes loop condition to be satisfied, or sets a timer
-		dout() << "Iterating dispatch event loop, next timer " << next_timer << " ms, sockets " << sockets.size() << " pinit " << pinit->peer_count() << " vnet " << vn->peer_count();
+		dout() << "Iterating dispatch event loop, next timer " << next_timer << " ms, sockets " << sockets.size() << " handshake " << pinit->peer_count() << " vnet " << vn->peer_count();
 		sockets.event_exec_wait(next_timer);
 	}
 	dout() << "dtls dispatch thread exiting";

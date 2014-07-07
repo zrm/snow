@@ -309,7 +309,7 @@ void vnet::snow_hello_packet(vnet_peer &peer, dbuf &buf, size_t packetsize)
 			send_peer(peer, peer.hello.hello_buf(), peer.hello.hello_size());
 		buf = hello.destroy();
 	} catch(const e_invalid_input& e) {
-		wout() << "Got snow_hello from peer in vnet which not parse: " << e;
+		wout() << "Got snow_hello from peer in vnet which did not parse: " << e;
 	}
 }
 
@@ -351,7 +351,7 @@ void vnet::snow_echo_packet(vnet_peer &peer, dbuf &buf, size_t packetsize)
 				peer.mtu.amtu = std::min(pmtu_ack, peer.mtu.vmtu);
 			}
 		}
-		peer.last_heartbeat = std::chrono::steady_clock::now();
+		peer.last_heartbeat_received = std::chrono::steady_clock::now();
 	} else {
 		wout() << "Dropped snow echo packet with truncated header";
 	}
@@ -588,39 +588,12 @@ Similarly, don't forget about the tls_conn pointer allocated in thread tracker
 	(this will all be much easier when compiler support for thread local storage improves.)
 */
 
+// TODO: PMTU reverse path hints: if fw is blocking ICMP, peer can do PMTU discovery from the other end and notify of what PMTU appears to be
+	// this could be wrong because the path could be different the other way, but useful as a hint for this peer to try
+	// might be possible to do this implicitly: when peer sends echo req if it's bigger than current PMTU then try it in the other direction
+	// if it gets ack'd then we have new PMTU (assuming no multipath etc, but ICMP blackhole + multipath with different MTUs = perfect storm)
+		// not clear if anything even could be done in that case: is it even possible to distinguish it from random packet loss?
 
-void vnet::operator() ()
-{ // thread entrypoint
-	// also, PMTU reverse path hints: peer does PMTU discovery the other way and if *it* gets ICMP messages then it notifies this peer what the PMTU appears to be
-			// this peer can then send packets of that size and slightly larger than that size to verify as much
-			// (it can also do this implicitly: peer doing PMTU from ICMP can specify as such in the discovery packet and first packet to be received specifies PMTU)
-			// this leaves the possibility that PTMU differs in each direction,
-			// but that just means it needs to be tested (which it ought to be for security anyway) by send/ack of larger packet
-	// once a PMTU has been established, test packets larger than the PMTU are sent periodically (e.g. once every ten minutes) to see if they make it through
-		// if they make it through, the PMTU discovery resumes to find the "new" PMTU
-		// (note possible fail: multipath with different MTUs could allow some large packets to pass while dropping others)
-	// notifying OS of PMTU: if OS sends a packet with DF set *after* smaller PMTU is discovered, this is easy: send ICMP using that packet
-		// the trouble is how to notify OS about packets that were already sent and dropped but whose contents were lost
-		// b/c we are generating ICMP in response to ICMP instead of ICMP in response to big packet, so packet header is not available to put into ICMP
-		// possible solution is to just fabricate an ICMP response to a packet that was never sent and put that packet in the ICMP header (e.g. ICMP echo req)
-		// most probably the OS will Do The Right Thing and fix its PMTU estimate
-		// the next trouble is if we send packets originally w/o DF which get dropped w/o OS expecting notification; but that's just going to require relying on the TCP retransmit etc	
-			// there are several alternatives to that:
-				// a) cache packets and retransmit/fragment after PMTU is known,
-				// b) send underlying packets w/o DF until PMTU is known,
-				// c) set original PMTU to e.g. 576 bytes and fragment initial packets to this boundary until PMTU discovery is completed [<- winner]
-					// (this leaves a question as to what to do with DF packets > 576 bytes; probably don't want to send ICMP claiming smaller than true PMTU]
-	
-
-}
-// while(active FDs returned by poll/select is not empty)
-	// take the SDs returned by poll/select and try to read from the first one
-		// the only thing poll/select is doing is waiting for reads, unless there was a handshake, and after the handshake we still want reads
-		// we never poll/select to wait for writes because there are no write queues -- when there is data either it gets written ASAP or dropped
-	// if read returns data, try to write it. If it doesn't write, drop the packet. OS has its own buffers, don't need more bufferbloat.
-	// if read doesn't return data because of WANT_READ, put it back in the poll/select list waiting on a read
-	// if read doesn't return data because of WANT_WRITE (b/c handshake), put it back in the poll/select list waiting (only) on a write
-	// proceed to the next SD in the active list. when you get to the last, go back to the first.
 
 void vnet::tuntap_socket_event(size_t, pvevent event, sock_err err)
 {
@@ -657,6 +630,10 @@ void vnet::peer_read_event(vnet_peer& peer, dbuf& udp_buf, size_t udp_len)
 		snow_packet *packet = reinterpret_cast<snow_packet*>(buf.data());
 		peer.idle_count = 0;
 		peer_packet(peer, buf, packet, nread);
+	} else if(nread == tls_conn::TLS_WANT_READ) {
+		// this can happen if peer disconnects and reconnects using the same ports: existing conn gets the handshake request, discards it and says WANT_READ
+		// so do heartbeat to make sure this peer is still alive, so that it can be killed quickly if it isn't and handshake packets can go to pinit
+		send_heartbeat(peer);
 	} else {
 		handle_dtls_error(peer, nread);
 	}
@@ -681,25 +658,26 @@ void vnet::send_heartbeat(const hashkey &fingerprint)
 		// (this could happen if peer just disconnected, ignore)
 		dout() << "Could not find peer requested to send heartbeat to with fingerprint " << fingerprint;
 }
-void vnet::send_heartbeat(vnet_peer& peer, size_t retries)
+void vnet::send_heartbeat(vnet_peer& peer, size_t retries, bool is_retry)
 {
 	// do heartbeat if previous heartbeat response was received more than two seconds ago
-	if(peer.last_heartbeat + std::chrono::seconds(2) < std::chrono::steady_clock::now()) {
+	if((peer.last_heartbeat_received >= peer.last_heartbeat_sent || is_retry) && peer.last_heartbeat_received + std::chrono::seconds(2) < std::chrono::steady_clock::now()) {
 		dout() << "Sending heartbeat to " << peer.conn->get_hashkey() << " (" << retries << " retries remain)";
+		peer.last_heartbeat_sent = std::chrono::steady_clock::now();
 		snow_echo heartbeat(0);
 		send_peer(peer, reinterpret_cast<const uint8_t*>(&heartbeat), sizeof(heartbeat));
-		timers.add(1, std::bind(&vnet::heartbeat_timeout, this, peer.self, std::chrono::steady_clock::now(), retries));
+		timers.add(1, std::bind(&vnet::heartbeat_timeout, this, peer.self, retries));
 	} else {
-		dout() << "Not sending heartbeat to " << peer.conn->get_hashkey() << " because not enough time has elapsed since the last one";
+		dout() << "Not sending heartbeat to " << peer.conn->get_hashkey() << " because one is pending or not enough time has elapsed since the last one";
 	}
 }
-void vnet::heartbeat_timeout(std::weak_ptr<vnet_peer>& peer, std::chrono::time_point<std::chrono::steady_clock> sent_ts, size_t retries)
+void vnet::heartbeat_timeout(std::weak_ptr<vnet_peer>& peer, size_t retries)
 {
 	auto ptr = peer.lock();
-	if(ptr && ptr->last_heartbeat <= sent_ts) {
+	if(ptr && ptr->last_heartbeat_received < ptr->last_heartbeat_sent) {
 		// ruh roh, didn't get heartbeat response
 		if(retries) {
-			send_heartbeat(*ptr, retries-1);
+			send_heartbeat(*ptr, retries-1, true);
 		} else {
 			dout() << "HEARTBEAT TIMEOUT for " << ptr->conn->get_hashkey();
 			ptr->conn->set_error();
@@ -731,7 +709,7 @@ void vnet::send_dtls_heartbeats()
 			dout() << "vnet: peer at NAT IP " << ss_ipaddr(peer->nat_addr) << " disconnected as idle too long";
 			mark_remove(*peer);
 		} else {
-			dout() << "dlts connection idle " << peer->idle_count << " threshold " << idle_threshold << ", doing heartbeat";
+			dout() << "dtls connection idle " << peer->idle_count << " threshold " << idle_threshold << ", doing heartbeat";
 			// send heartbeat every few seconds: for large numbers of connections this could be slow, is there any better way to accomplish this?
 			send_heartbeat(*peer);
 		}
@@ -772,6 +750,7 @@ void vnet::handle_dtls_error(vnet_peer& peer, ssize_t status)
 		dout() << "vnet: socket error from DTLS connection, ignored";
 		// this can happen for writes, but error could be attacker sending icmp
 		// TODO: maybe do heartbeat? but careful now: don't want send() -> error -> heartbeat -> send() <-<-
+			// maybe OK if heartbeat sets last_heartbeat_sent before calling send() because then next call w/o is_retry will do nothing
 		break;
 	case tls_conn::TLS_CONNECTION_SHUTDOWN:
 		// other side sent shutdown msg, send back to tls_newconn for shutdown/cleanup

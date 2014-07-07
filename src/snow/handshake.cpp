@@ -304,7 +304,7 @@ void snow_handshake_conn::recv_snow_hello(uint8_t* read_buf, size_t read_len)
 		return;
 	}
 	if(buf[0] != (PACKET_TYPE::SNOW_PACKET | SNOW_PACKET_TYPE::SNOW_HELLO_PACKET)) {
-		// peer has already sent a non-hello packet, we must have lost its hello
+		// peer has already sent a non-hello packet, we may have lost its hello
 		// buffer packet if there are not too many already and then request a hello retransmit by resending our hello with REQUEST_RETRANSMIT
 		buffer_packet(std::move(buf), bytes);
 		hello_send.set_flag(snow_hello::REQUEST_RETRANSMIT);
