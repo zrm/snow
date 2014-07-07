@@ -494,8 +494,7 @@ private:
 	 * route_id: see follow_trackback
 	*/
 	void send_connect(const dht_hash& dest, const dhtconnect_opts& opts = dhtconnect_opts(), bool follow_trackback = false, uint64_t route_id = LOCAL_INDEX);
-	//void update_signature(bool force = false);
-	//bool verify_signature(const DER_pubkey& pubkey, const dht_signature& verify, const std::vector<ip_union>& addrs, uint16_t hbo_tlsport);
+	void send_broadcast_connect(const hashkey& dest_hk); // send broadcast connect with opts from dht_connect_pending (e.g. after timeout), if one has not already been sent
 	// TODO: check if there exist any curious C++ implementations where epoch is not 00:00:00 UTC 1 January 1970 and adjust for that somehow
 	static time_t get_time() { return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count(); }
 	void remove_routing(dht_peer& peer);

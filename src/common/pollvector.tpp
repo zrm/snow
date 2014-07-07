@@ -328,12 +328,12 @@ template<class T>
 void pollvector<T>::reorder_remove(size_t remove_index)
 {
 	if(remove_index == data.size()-1)
-		dout() << pvname << " socket " << get_fd(remove_index) << " removed from " << remove_index;
+		dout() << pvname << " socket " << get_fd(remove_index) << " removed from defunct peer at " << remove_index;
 	else
-		dout() << pvname << " socket " << get_fd(data.size()-1) << " moved from " << (data.size()-1) << " to " << remove_index << " replacing " << get_fd(remove_index);
+		dout() << pvname << " socket " << get_fd(data.size()-1) << " moved from " << (data.size()-1) << " to " << remove_index << " replacing defunct " << get_fd(remove_index);
 	// give socket to csocket whose destructor will close it (if it is not INVALID_SOCKET)
 	// note that this causes close() to be called after e.g. epoll_ctl(EPOLL_CTL_DEL) below as required
-	csocket(get_fd(remove_index));
+	csocket defunct_sock(get_fd(remove_index));
 #ifdef WINSOCK
 	cancel_events(remove_index);
 	if(data.back().peer_id != nullptr)

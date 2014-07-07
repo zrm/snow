@@ -248,9 +248,7 @@ template<> void dht::process_msgtype_final<DHTMSG::MISMATCH_DETECTED>(dhtmsg msg
 		if(it != dht_connect_pending.end() && (it->second.flags & dhtconnect_opts::BROADCAST_RETRY)) {
 			// either peer is down or routing failure, try broadcasting CONNECT to see if some other path will get us there
 			dout() << "Got valid MISMATCH_DETECTED, retrying with broadcast CONNECT";
-			it->second.flags ^= dhtconnect_opts::BROADCAST_RETRY;
-			for(size_t i = NUM_NONPEER_FDS; i < connections.size(); ++i)
-				send_connect(mismatch.get<F::TARGET_HASHKEY>(), it->second);
+			send_broadcast_connect(mismatch.get<F::TARGET_HASHKEY>().get_hashkey());
 		}
 	} else {
 		dout() << "Got MISMATCH_DETECTED for wrong hashkey or without having sent CONNECT, ignored";
@@ -313,7 +311,7 @@ template<> void dht::process_msgtype_final<DHTMSG::CHECK_ROUTE>(dhtmsg msg, dht_
 			// FAIL: what is this about? routing so slow that the timeout occurred before we got the CHECK_ROUTE?
 				// (this can also occur if peer was disconnected between sending HELLO and receiving CHECK_ROUTE)
 			if(check.get<F::NONCE>().get_hbo() == 0)
-				dout() << "Got CHECK_ROUTE destined for this node with zero nonce, must have been a verify but routing worked";
+				dout() << "Got CHECK_ROUTE destined for this node with zero nonce, must have been a verify but routing worked (or last peer disconnected and successor is self)";
 			else 
 				dout() << "Got CHECK_ROUTE but nonce not found in nonce_map";
 		}
@@ -769,7 +767,8 @@ void dht::pending_connect_timeout(uint32_t nat_addr)
 
 void dht::dtls_disconnect(const hashkey& fingerprint, uint32_t nbo_nat_addr)
 {
-	// DTLS has disconnected, disconnect DHT and don't bother trying to reconnect that peer
+	// DTLS peer has disconnected, disconnect DHT peer and don't bother trying to reconnect
+	dout() << "DHT got DTLS disconnect of " << fingerprint << " / " << ss_ipaddr(nbo_nat_addr);
 	peer_map.erase(fingerprint);
 	auto it = connected_peers.find(nbo_nat_addr);
 	if(it != connected_peers.end()) {
@@ -777,9 +776,7 @@ void dht::dtls_disconnect(const hashkey& fingerprint, uint32_t nbo_nat_addr)
 		mark_defunct(*it->second);
 	}
 	// drop pending connection retries too
-	auto pending_it = dht_pending_map.find(nbo_nat_addr);
-	if(pending_it != dht_pending_map.end())
-		dht_pending_map.erase(pending_it);
+	dht_pending_map.erase(nbo_nat_addr);
 }
 
 
@@ -959,22 +956,14 @@ void dht::send_connect(const dht_hash& dest, const dhtconnect_opts& opts, bool f
 	}
 
 	// broadcast_retry is only false when calling send_connect as part of a broadcast (to avoid infinite recursion), in any other connect to a real hashkey, add to dht_connect_pending
-	if((opts.flags && dhtconnect_opts::BROADCAST_RETRY) && dest_hk.algo() != md_hash::DATA) {
+	if((opts.flags & dhtconnect_opts::BROADCAST_RETRY) && dest_hk.algo() != md_hash::DATA) {
 		dht_connect_pending.insert(std::pair<hashkey,dhtconnect_opts>(dest_hk, opts));
-		timers.add(5, [=]() {
-			auto pending_it = dht_connect_pending.find(dest_hk);
-			auto peer_it = peer_map.find(dest_hk);
-			if(peer_it == peer_map.end() && (pending_it->second.flags & dhtconnect_opts::BROADCAST_RETRY)) {
-				// still not connected after timeout, try broadcasting connect
-				pending_it->second.flags ^= dhtconnect_opts::BROADCAST_RETRY; // set to false to prevent recursion
-				for(std::pair< const hashkey, map_peer > &peer : peer_map)
-					if(peer.second.peer->index != LOCAL_INDEX && peer.second.dht_connected)
-						send_connect(dest_hk, pending_it->second, false, peer.second.peer->index);
-			}
-			dht_connect_pending.erase(pending_it);
+		timers.add(5, [this,dest_hk]() {
+			send_broadcast_connect(dest_hk);
+			dht_connect_pending.erase(dest_hk);
 		});
 	}
-	dout() << "dht sending CONNECT to peer " << dest.get_hashkey();
+	dout() << "dht sending CONNECT to peer " << dest_hk;
 	if(local_ipaddrs.size() == 0) {
 		eout() << "Tried to send DHT CONNECT when local IP address is unknown";
 		return;
@@ -1001,6 +990,20 @@ void dht::send_connect(const dht_hash& dest, const dhtconnect_opts& opts, bool f
 			route_msg(connect_msg.get_msg(), *connections[LOCAL_INDEX]);
 		else
 			write_peer(connect_msg.get_msg(), *connections[route_id], *connections[LOCAL_INDEX]); 
+	}
+}
+
+void dht::send_broadcast_connect(const hashkey& dest_hk)
+{
+	auto pending_it = dht_connect_pending.find(dest_hk);
+	auto peer_it = peer_map.find(dest_hk);
+	if(peer_it == peer_map.end() && (pending_it->second.flags & dhtconnect_opts::BROADCAST_RETRY)) {
+		// original connect failed (e.g. timeout or MISMATCH_DETECTED), try broadcasting connect
+		pending_it->second.flags ^= dhtconnect_opts::BROADCAST_RETRY; // set to false to prevent recursion
+		dht_hash dest(dest_hk);
+		for(std::pair< const hashkey, map_peer > &peer : peer_map)
+			if(peer.second.peer->index != LOCAL_INDEX && peer.second.dht_connected)
+				send_connect(dest, pending_it->second, false, peer.second.peer->index);
 	}
 }
 
@@ -1148,17 +1151,15 @@ void dht::peer_socket_event(size_t i, pvevent event, sock_err err)
 void dht::remove_routing(dht_peer& peer)
 {
 	if(peer.index == LOCAL_INDEX) {
-		eout() << "BUG: remove_routing called for local index";
+		eout() << "BUG: remove_routing called for local node";
 		return;
 	}
-	// maybe check that peer is correct, because connection could be marked defunct as a duplicate while same fingerprint points to retained alternative connection
-		// TODO: does this still happen, or are duplicates eliminated earlier now?
 	if(&peer == route_map.successor().get())
 		peer.flags[dht_peer::DISCONNECT_CHECK_ROUTE] = true;
 	route_map.remove(connections[peer.index]);
-	
+
 	auto peer_it = peer_map.find(peer.fingerprint);
-	if(peer_it != peer_map.end() && peer_it->second.peer->index == peer.index)
+	if(peer_it != peer_map.end() && peer_it->second.peer.get() == &peer)
 		peer_it->second.dht_connected = false;
 }
 void dht_route_map::insert(std::shared_ptr<dht_peer>& ptr)
@@ -1226,12 +1227,12 @@ void dht::cleanup_connection(size_t remove_index)
 	if(it != connected_peers.end() && it->second == connections[remove_index])
 		connected_peers.erase(it);
 	
-	// (remove_peer is already removed from route_map and peer_map in mark_defunct())
+	// (remove_peer is already removed from route_map and dht_connected is set to false in peer_map by mark_defunct()/remote_routing())
 
 	// TODO: is there anything we want to or can do with data in a write buf on hard disconnect?
 		// can't reroute it w/o knowing where message boundaries are, but we don't currently track that
 	
-	if(remove_peer->flags[dht_peer::DISCONNECT_CHECK_ROUTE]) {
+	if(remove_peer->flags[dht_peer::DISCONNECT_CHECK_ROUTE] && route_map.successor()->index != LOCAL_INDEX) {
 		dhtmsg_type<DHTMSG::CHECK_ROUTE> check(dht_hash(connections[LOCAL_INDEX]->fingerprint),	nonce64(0UL), trackback_route_id(0UL));
 		route_msg(check.get_msg(), *connections[LOCAL_INDEX], *route_map.successor());
 	}
@@ -1240,7 +1241,7 @@ void dht::cleanup_connection(size_t remove_index)
 	if(peer_it != peer_map.end() && peer_it->second.peer->index == remove_index) {
 		remove_peer->index = SIZE_MAX;
 		peer_it->second.peer = std::make_shared<dht_peer>(std::move(*remove_peer));
-		dht_peer* peer(peer_it->second.peer.get());
+		dht_peer* peer = peer_it->second.peer.get();
 		if(!peer->flags[dht_peer::CLEAN_SHUTDOWN] && !peer->flags[dht_peer::NO_RECONNECT]) {
 			dout() << "DHT hard disconnect, scheduling reconnect";
 			peer->bufs = dht_peer_bufs(); // clear any remaining buffers
@@ -1248,7 +1249,7 @@ void dht::cleanup_connection(size_t remove_index)
 			schedule_reconnect(peer_it->second.peer);
 		}
 	} else {
-		dout() << "NOTE: dht_peer in cleanup_connection was unexpectedly not found in peer_map";
+		dout() << "dht_peer in cleanup_connection was not found in peer_map (DTLS hard disconnect?)";
 		remove_peer->index = SIZE_MAX;
 	}
 	if(connections[remove_index].unique() == false)
@@ -1358,7 +1359,8 @@ void dht::read_peer(dht_peer& peer)
 	{
 		size_t msglen = dht_header::get_msglen(msg);
 		if(msglen < dht_header::size()) {
-			mark_defunct(peer); // peer sent garbage, disconnect
+			dout() << "DHT peer sent " << msglen << " byte message shorter than any legitimate DHT message, disconnecting";
+			mark_defunct(peer);
 			return;
 		}
 		if(bytes < msglen)
