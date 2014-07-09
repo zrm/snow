@@ -185,7 +185,6 @@ private:
 	dtls_dispatch* dispatch;
 	vnet* vn;
 	dht* dht_thread;
-	worker_thread* io;
 	tls_server tls_listen;
 
 	// peers in handshake
@@ -206,8 +205,8 @@ private:
 		return std::move(newpeer);
 	}
 public:
-	peer_init(dtls_dispatch* d, vnet* v, worker_thread* io_t, timer_queue& tq, buffer_list* bl) 
-		: timers(tq), dispatch(d), vn(v), io(io_t)
+	peer_init(dtls_dispatch* d, vnet* v, timer_queue& tq, buffer_list* bl) 
+		: timers(tq), dispatch(d), vn(v)
 	{
 		snow_handshake_conn::set_pointers(d, this, &timers, vn);
 		snow_handshake_conn::set_buflist(bl);

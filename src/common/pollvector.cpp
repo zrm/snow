@@ -75,7 +75,9 @@ void print_poll_error(const pollfd& p)
 	if(p.revents & POLLERR) dout() << "poll() revent was POLLERR";
 	if(p.revents & POLLHUP) dout() << "poll() revent was POLLHUP";
 	if(p.revents & POLLNVAL) dout() << "poll() revent was POLLNVAL";
+#ifdef __linux
 	if(p.revents & POLLRDHUP) dout() << "poll() revent was POLLRDHUP";
+#endif
 #endif
 }
 

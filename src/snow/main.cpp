@@ -64,7 +64,7 @@
 
 int daemon_main()
 {
-	network_init();
+	network_init(); // (WSAStartup, must be done before anything else)
 	
 	snow::conf.read_config();
 	csocket nameserv_sock;
@@ -74,10 +74,14 @@ int daemon_main()
 		su.sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 		su.sa.sin_port = htons(snow::conf[snow::NAMESERV_PORT]);
 		nameserv_sock = csocket(AF_INET, SOCK_DGRAM);
-		nameserv_sock.bind(su);
 		nameserv_sock.setopt_exclusiveaddruse();
+		nameserv_sock.bind(su);
 	} catch(const check_err_exception &e) {
-		eout() << "Failed to set up nameserv listen socket: " << e;
+		if(sock_err::get_last() == sock_err::eaddrinuse) {
+			eout() << "Failed to set up nameserv listen socket: Address already in use (is the service already running?)";
+		} else {
+			eout() << "Failed to set up nameserv listen socket: " << e;
+		}
 		return EXIT_FAILURE;
 	}
 	// TODO: privilege separation

@@ -1,5 +1,5 @@
-CC=gcc
-CXX=g++
+CC=cc
+CXX=c++
 CFLAGS=-Wall -Wextra -O3 
 CXXFLAGS=-std=c++11 -pthread $(CFLAGS)
 SNOW_LDFLAGS=-lssl -lcrypto -lnatpmp -lminiupnpc

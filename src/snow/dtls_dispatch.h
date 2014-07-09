@@ -93,13 +93,13 @@ class vnet;
 class peer_init;
 class snow_hello;
 class tls_conn;
-class packet_buf;
-class vnet_peer;
-class snow_port_detect;
+struct packet_buf;
+struct vnet_peer;
+struct snow_port_detect;
 class hashkey;
 class nameserv;
 class dht;
-class dht_connect_info;
+struct dht_connect_info;
 class worker_thread;
 class dtls_dispatch
 {

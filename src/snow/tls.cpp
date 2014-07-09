@@ -52,6 +52,10 @@
 #include<accctrl.h>
 #include<aclapi.h>
 #include<io.h>
+#else
+#include<sys/types.h>
+#include<sys/stat.h>
+#include<fcntl.h>
 #endif
 #include"tls.h"
 #include"configuration.h"
@@ -227,7 +231,7 @@ static DH *get_dhparams()
 		} while(DH_check(params, &codes) == 0);
 		FILE* param_outfile = fopen(snow::conf[snow::DH_PARAMS_FILE].c_str(), "w");
 		if(param_outfile != nullptr) {
-			dout() << "Generated new DHT params, writing to file " << snow::conf[snow::DH_PARAMS_FILE];
+			dout() << "Generated new DH params, writing to file " << snow::conf[snow::DH_PARAMS_FILE];
 			PEM_write_DHparams(param_outfile, params);
 			fclose(param_outfile);
 		} else {

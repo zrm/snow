@@ -143,7 +143,7 @@ void csocket::setopt_dontfragment() {
 	// check_sock_err(setsockopt(sd, IPPROTO_IPV6, IPV6_MTU_DISCOVER, &val, sizeof(val)), "setsockopt(IPV6_MTU_DISCOVER)");
 #else
 	// BSD
-	check_sock_err(setsockopt(sd, IPPROTO_IP, IP_DONTFRAG, &YES, sizeof(val)), "setsockopt(IP_DONTFRAG)");
+	check_sock_err(setsockopt(sd, IPPROTO_IP, IP_DONTFRAG, &YES, sizeof(YES)), "setsockopt(IP_DONTFRAG)");
 #endif
 }
 
@@ -157,7 +157,7 @@ void csocket::setopt_nonblock() {
 }
 void csocket::bind(const sockaddrunion& su)
 {
-	check_sock_err(::bind(sd, &su.s, sizeof(sockaddrunion)), "bind()");
+	check_sock_err(::bind(sd, &su.s, get_addrlen(su)), "bind()");
 }
 void csocket::bind(in_port_t nbo_port, int domain)
 {
@@ -174,7 +174,7 @@ void csocket::bind(in_port_t nbo_port, int domain)
 }
 void csocket::connect(const sockaddrunion& su)
 {
-	if(is_sock_err(::connect(sd, &su.s, sizeof(sockaddrunion)))) {
+	if(is_sock_err(::connect(sd, &su.s, get_addrlen(su)))) {
 		// EINPROGRESS just means socket is non-blocking and requires TCP handshake, not really an error
 		if(sock_err::get_last() != sock_err::einprogress)
 			throw e_check_sock_err("connect()", true);
@@ -223,7 +223,7 @@ size_t send_rv(ssize_t bytes, const char* fn)
 }
 size_t csocket::sendto(const void* buf, size_t len, const sockaddrunion& dest, int flags)
 {
-	ssize_t bytes = ::sendto(sd, static_cast<const char*>(buf), len, flags, &dest.s, sizeof(sockaddrunion));
+	ssize_t bytes = ::sendto(sd, static_cast<const char*>(buf), len, flags, &dest.s, get_addrlen(dest));
 	return send_rv(bytes, "sendto()");
 }
 size_t csocket::send(const void* buf, size_t len, int flags)
@@ -258,10 +258,10 @@ size_t csocket::recv(void* buf, size_t len, int flags)
 
 void csocket::listen(int backlog) { check_sock_err(::listen(sd, backlog), "listen()"); }
 
-csocket csocket::accept(sockaddrunion &peer_addr)
+csocket csocket::accept(sockaddrunion *peer_addr)
 {
-	socklen_t addrlen = sizeof(peer_addr);
-	int newsd = ::accept(sd, &peer_addr.s, &addrlen);
+	socklen_t addrlen = sizeof(sockaddrunion);
+	int newsd = ::accept(sd, &peer_addr->s, &addrlen);
 	check_sock_err(newsd, "accept()");
 	return csocket(newsd);
 }

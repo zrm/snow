@@ -52,7 +52,10 @@
 #include<Ws2tcpip.h>
 #define in_port_t uint16_t
 #else
+#include<netinet/in.h>
+#include<sys/socket.h>
 #include<arpa/inet.h>
+#include<errno.h>
 #include<poll.h>
 #endif
 
@@ -252,6 +255,8 @@ public:
 	typedef int sock_t;
 	typedef int sockopt_val_t;
 #endif
+	// BSD gives error if you provide addrlen *larger* than the sockaddr for the AF you're using, so have to check the AF
+	static socklen_t get_addrlen(const sockaddrunion& su) { return (su.s.sa_family == AF_INET) ? sizeof(sockaddr_in) : sizeof(sockaddr_in6); }
 protected:
 	sock_t sd; // socket descriptor
 public:
@@ -273,7 +278,7 @@ public:
 	void bind(in_port_t nbo_port, int domain);
 	void connect(const sockaddrunion& su);
 	void listen(int backlog = 10);
-	csocket accept(sockaddrunion& peer_addr);
+	csocket accept(sockaddrunion* peer_addr);
 	sockaddrunion & getsockname(sockaddrunion& su) const;
 	sockaddrunion & getpeername(sockaddrunion& su) const;
 	size_t sendto(const void* buf, size_t len, const sockaddrunion& dest, int flags = 0);

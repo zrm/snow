@@ -355,9 +355,9 @@ public:
 */
 
 class dht_signature;
-class dht_hash;
-class dht_forward_payload;
-class dht_connect_retry;
+struct dht_hash;
+struct dht_forward_payload;
+struct dht_connect_retry;
 class dtls_dispatch_thread;
 class nameserv;
 class dht

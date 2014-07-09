@@ -47,8 +47,9 @@
 #include<string.h>
 
 #include<unistd.h>
-//#include<sys/types.h>
-//#include<sys/socket.h>
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<netinet/in.h>
 
 
 #ifndef NULL
@@ -183,7 +184,8 @@ enum nss_status _nss_snow_gethostbyname_r(const char * name, struct hostent * re
 			if(DEBUG) printf("E: returned data does not match name\n");
 		} else {
 			buf += namelen;
-			if(DEBUG) printf("Got result: %u.%u.%u.%u\n", buf[0], buf[1], buf[2], buf[3]);
+			const unsigned char* addr = (const unsigned char*) buf;
+			if(DEBUG) printf("Got result: %u.%u.%u.%u\n", addr[0], addr[1], addr[2], addr[3]);
 			uint32_t zero = 0;
 			if(memcmp(&zero, buf, sizeof(zero)) == 0) {
 				// 0.0.0.0 signifies not found

@@ -64,6 +64,7 @@ int socketpair(int domain, int type, int /*protocol, ignored*/, csocket::sock_t 
 		su.sa.sin_port = 0;
 		if(type == SOCK_STREAM) {
 			csocket listen_sock(AF_INET, SOCK_STREAM);
+			listen_sock.setopt_exclusiveaddruse();
 			listen_sock.bind(su);
 			listen_sock.getsockname(su);
 			listen_sock.listen();
@@ -78,6 +79,8 @@ int socketpair(int domain, int type, int /*protocol, ignored*/, csocket::sock_t 
 			fds[1] = b.release_fd();
 		} else {
 			csocket a(AF_INET, SOCK_DGRAM), b(AF_INET, SOCK_DGRAM);
+			a.setopt_exclusiveaddruse();
+			b.setopt_exclusiveaddruse();
 			a.bind(su);
 			b.bind(su);
 			a.getsockname(su);

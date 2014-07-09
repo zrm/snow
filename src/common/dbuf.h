@@ -42,6 +42,7 @@
 
 #ifndef DBUF_H
 #define DBUF_H
+#include<cstdlib>
 #include<cstdint>
 #include<cstring>
 #include<string>

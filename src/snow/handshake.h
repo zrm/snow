@@ -170,7 +170,7 @@ public:
 };
 
 
-class dht_connect_retry;
+struct dht_connect_retry;
 class peer_init;
 class vnet;
 class snow_handshake_conn;

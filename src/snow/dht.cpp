@@ -69,7 +69,7 @@ dht_newconn dht::get_client()
 	dht_newconn rv;
 	sockaddrunion client_addr;
 	try {
-		rv.sock = dht_incoming.accept(client_addr);
+		rv.sock = dht_incoming.accept(&client_addr);
 		if(client_addr.ss.ss_family != AF_INET)
 			throw check_err_exception("unsupported address family for DHT client", false);
 		rv.sock.setopt_nonblock();

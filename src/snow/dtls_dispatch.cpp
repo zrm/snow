@@ -91,7 +91,7 @@ void add_addr(std::vector<sockaddrunion>& addrs, const sockaddrunion* su, uint32
 			dout() << "Got IPv6 interface ipaddr: " << addrs.back();
 		}
 	} else {
-		dout() << "Ignoring ifaddr with non-INET address family " << su->s.sa_family;
+		dout() << "Ignoring ifaddr with non-INET address family " << static_cast<int>(su->s.sa_family);
 	}
 }
 
@@ -146,7 +146,7 @@ std::vector<sockaddrunion> dtls_dispatch::detect_local_addrs(uint32_t nbo_tun_ad
 
 dtls_dispatch::dtls_dispatch(worker_thread* io)
 	: sockets(std::bind(&dtls_dispatch::cleanup_socket, this, std::placeholders::_1), DISPATCH_NONPEER::NUM_NONPEER_FDS, "dispatch"), buflist(-1),
-	  vn(new vnet(this, io, timers, buflist)), pinit(new peer_init(this, vn.get(), io, timers, &buflist)),
+	  vn(new vnet(this, io, timers, buflist)), pinit(new peer_init(this, vn.get(), timers, &buflist)),
 	  run_state(RUNNING), natpmp_addr(0)
 {
 	buflist.set_bufsize(vn->get_tun_mtu()+200); // tun MTU plus [over-]estimate of DTLS overhead
@@ -233,11 +233,11 @@ void dtls_dispatch::create_socket(const sockaddrunion& su, uint32_t flags)
 {
 	dout() << "Binding UDP socket on " << su;
 	csocket sock(su.s.sa_family, SOCK_DGRAM);
+	sock.setopt_exclusiveaddruse();
 	sock.bind(su);
 	sock.setopt_nonblock();
 	if(su.s.sa_family == AF_INET)
 		sock.setopt_dontfragment(); // (IPv6 does not have DF bit)
-	sock.setopt_exclusiveaddruse();
 	socket_map.emplace(ip_info(su), sockets.size());
 	csocket::sock_t sd = sock.fd();
 	sockets.emplace_back(sd, pvevent::read, peer_socket_event_function, dtls_socket(std::move(sock), su, flags));

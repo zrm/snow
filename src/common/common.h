@@ -53,11 +53,16 @@
 #include<string>
 #include<cstring>
 #include<iomanip>
+#include<random>
 #ifdef WINDOWS
 #include<winsock2.h>
 #include<in6addr.h>
 #else
+#ifdef __linux
 #include<endian.h>
+#else
+#include<sys/endian.h>
+#endif
 #include<sys/select.h>
 #include<arpa/inet.h>
 #include<unistd.h>

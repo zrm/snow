@@ -140,7 +140,7 @@ uint16_t get_random_port()
 		sock.getsockname(su);
 		return su.sa.sin_port;
 	} catch(const e_check_sock_err& e) {
-		eout() << "Failed to bind port for get_random_port(): " << e;
+		eout() << __FILE__ << ":" << __LINE__ << ": Failed to bind port for get_random_port(): " << e;
 		abort();
 	}
 	return 0;

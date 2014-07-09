@@ -49,7 +49,11 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <net/if.h>
+#ifdef __linux
 #include <linux/if_tun.h>
+#else
+#include <net/if_tun.h>
+#endif
 #include <sys/ioctl.h>
 #include <unistd.h>
 #endif
@@ -216,9 +220,26 @@ tuntap::tuntap() : mtu(1419)
 	if(snow::conf[snow::VIRTUAL_INTERFACE].size() >= IFNAMSIZ)
 		throw check_err_exception("VIRTUAL_INTERFACE name is too long", false);
 	strcpy(ifr.ifr_name, snow::conf[snow::VIRTUAL_INTERFACE].c_str());
-	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
 	check_err(fcntl(fd, F_SETFL, O_NONBLOCK), "setting tuntap socket to non-blocking");
+#ifdef __linux
+	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
 	check_err(ioctl(fd, TUNSETIFF, (void*) &ifr), "opening tun/tap interface");
+#endif
+	// note: Mac and BSD require a stupid hack to make tun behave properly because they insist on a single destination address being specified
+		// solution is to exclude an address from the address pool and specify it as the destination when configuring the interface
+		// then set a route specifying that address as the gateway for the entire snow subnet so OS will send them all to the tun interface
+	// TODO: write code to do that programmatically for Mac/BSD
+		// existing code seems to work on BSD if you set CLONE_DEVICE to e.g. /dev/tun0 and VIRTUAL_INTERFACE to e.g. tun0 and configure the tun interface manually, e.g.:
+		// # ifconfig tun0 create 172.16.0.1 netmask 255.240.0.0 172.31.255.254 mtu 1419
+		// # route add -net 172.16.0.0 172.31.255.254 255.240.0.0
+		// (note: this must be done each time you start the daemon, when the daemon exits the interface remains but configuration is forgotten; same two commands w/o "create")
+		// (note: 'ifconfig tun create' will create next tun# necessary, see if there is any simple way to replicate with API)
+		// doing this programmatically requires call to ioctl passing SIOCSIFPHYADDR with in_aliasreq struct as follows:
+			// ifra_name = "tun[#]"
+			// ifra_addr as local interface addr
+			// ifra_dstaddr as fake addr
+			// ifra_mask as subnet mask
+		// and then adding the route via some call to the BSD routing API
 	csocket sock(AF_INET, SOCK_DGRAM); // need ordinary socket for SIOC[GS]*, can't use tun fd
 	check_err(ioctl(sock.fd(), SIOCGIFFLAGS, (void*) &ifr), "getting tuntap interface flags");
 	if((ifr.ifr_flags & IFF_UP) == 0) {
@@ -250,14 +271,14 @@ tuntap::tuntap() : mtu(1419)
 		ifr.ifr_addr = su.s;
 		check_err(ioctl(sock.fd(), SIOCSIFADDR, &ifr), "setting tun/tap interface IP address");
 	}
-	ifr.ifr_netmask.sa_family = AF_INET;
 	check_err(ioctl(sock.fd(), SIOCGIFNETMASK, &ifr), "getting tun/tap interface netmask");
-	su.s = ifr.ifr_netmask;
+	su.s = ifr.ifr_addr;
+	dout() << "Got tuntap netmask " << ss_ipaddr(su.sa.sin_addr.s_addr);
 	if(su.sa.sin_addr.s_addr != netmask.s_addr) {
 		dout() << "Virtual interface netmask was " << ss_ipaddr(su.sa.sin_addr.s_addr) << ", should be " << ss_ipaddr(netmask.s_addr) << ", trying to fix";
 		su.sa.sin_addr = netmask;
 		ifr.ifr_addr = su.s;
-		check_err(ioctl(sock.fd(),  SIOCSIFNETMASK, &ifr), "setting tun/tap interface IP address");
+		check_err(ioctl(sock.fd(),  SIOCSIFNETMASK, &ifr), "setting tun/tap interface netmask");
 	}
 	mtu = snow::conf[snow::VIRTUAL_INTERFACE_MTU];
 	check_err(ioctl(sock.fd(), SIOCGIFMTU, (void*) &ifr), "getting tun/tap interface MTU");
@@ -309,7 +330,7 @@ tuntap::if_info tuntap::get_if_info()
 	tmp.s = ifr.ifr_addr;
 	rv.if_addr = tmp.sa.sin_addr.s_addr;
 	check_err(ioctl(sock.fd(), SIOCGIFNETMASK, &ifr), "getting tun/tap interfacet netmask");
-	tmp.s = ifr.ifr_netmask;
+	tmp.s = ifr.ifr_addr;
 	rv.netmask = tmp.sa.sin_addr.s_addr;
 	return rv;
 #endif

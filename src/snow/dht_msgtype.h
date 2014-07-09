@@ -515,6 +515,7 @@ struct dhtmsg_type : public dhtmsg_intermediate<MSGTYPE, typename dht::msg_enum<
 	// check template specializations:
 	template<typename... C> static uint8_t test_base(dhtmsg_base<MSGTYPE, C...>*);
 	template<typename... C> static uint16_t test_base(...);
+	// TODO: this assertion passes with gcc but fails when it should not with clang 3.3, figure out if problem is with assertion or clang
 	static_assert(sizeof(decltype(test_base(static_cast<dhtmsg_type<MSGTYPE>*>(nullptr)))) == sizeof(uint8_t),
 		"dhtmsg_intermediate<DHTMSG> template specialization is malformed or missing, check \" : public dhtmsg_base<...>\" template arguments and ensure dhtmsg_intermediate is derived from dhtmsg_base");
 	static_assert(MSGTYPE==base::msgtype, "dhtmsg_intermediate template specialization contains DHTMSG type mismatch");
