@@ -368,7 +368,7 @@ void dtls_dispatch::do_holepunch(const std::vector<ip_info>& addrs, in_port_t po
 			test.getsockname(local);
 		} catch(const e_check_sock_err& e) {
 			// this is fairly common when e.g. peer provides IPv6 addr and this node doesn't have one
-			dout() << "Error doing holepunch to " << remote << ": " << e;
+			dout() << "Could not do holepunch to " << remote << ": " << e;
 			continue;
 		}
 		if(remote.s.sa_family == AF_INET) {
@@ -578,6 +578,7 @@ void dtls_dispatch::set_pointers(dht* d, nameserv* ns)
 void dtls_dispatch::send_port_detect_nonce(std::shared_ptr<vnet_peer>& peer)
 {
 	port_detect_nonce nonce;
+	dout() << "Sending port detect nonce " << std::hex << nonce.nonce0 << " " << nonce.nonce1 << std::dec << " to " << peer->conn->get_hashkey();
 	port_nonce_map[nonce]=peer;
 	timers.add(20, [this,nonce]() { port_nonce_map.erase(nonce); } );
 	snow_port_detect port_detect(nonce.bytes());
@@ -592,11 +593,14 @@ void dtls_dispatch::snow_port_detect_packet(snow_port_detect* packet, vnet_peer&
 			test.connect(fromaddr);
 			sockaddrunion local;
 			test.getsockname(local);
-			local.set_ip_port(local.s.sa_family == AF_INET ? snow::conf[snow::DTLS_BIND_PORT] : snow::conf[snow::DTLS_BIND6_PORT]);
+			local.set_ip_port(local.s.sa_family == AF_INET ? htons(snow::conf[snow::DTLS_BIND_PORT]) : htons(snow::conf[snow::DTLS_BIND6_PORT]));
 			auto local_it = socket_map.find(ip_info(local));
 			if(local_it != socket_map.end()) {
 				sockets[local_it->second].sock.sendto(packet->data, sizeof(packet->data), fromaddr);
 				dout() << "Sent port detect UDP nonce to peer at " << fromaddr;
+			} else {
+				// this happening is probably a bug, there should be a socket on every local address that the OS would use for an outgoing packet
+				dout() << "No socket found on " << local << " to send port detect nonce to " << fromaddr;
 			}
 		} catch(const e_check_sock_err& e) {
 			dout() << "Could not send port detect UDP nonce packet to peer at " << fromaddr << ": " << e;
@@ -624,6 +628,7 @@ bool dtls_dispatch::check_port_detect_nonce(const uint8_t* nonce_data, const soc
 	port_detect_nonce nonce(nonce_data);
 	auto it = port_nonce_map.find(nonce);
 	if(it != port_nonce_map.end()) {
+		dout() << "Got port detect nonce " << std::hex << nonce.nonce0 << " " << nonce.nonce1 << std::dec << " from " << fromaddr;
 		if(auto ptr = it->second.lock()) {
 			ip_info from(fromaddr);
 			snow_port_detect reply(from.addr.ip6.s6_addr, from.port);
@@ -631,13 +636,15 @@ bool dtls_dispatch::check_port_detect_nonce(const uint8_t* nonce_data, const soc
 		}
 		port_nonce_map.erase(it);
 		return true;
+	} else {
+		dout() << "16-byte UDP packet from " << fromaddr << " was not a recognized port detect nonce";
 	}
 	return false;
 }
 
 // dht -> pinit
 void dtls_dispatch::add_peer(dht_connect_info&& info) {
-	dout() << "add_connection doing new_connect_info";
+	dout() << "add_connection doing new_connect_info for " << info.peer;
 	interthread_msg_queue.put(std::bind(&peer_init::new_connect_info, pinit.get(), std::move(info)));
 }
 // pinit -> vnet, vnet -> pinit

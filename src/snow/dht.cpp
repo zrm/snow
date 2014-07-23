@@ -140,13 +140,15 @@ template<> void dht::process_msgtype_final<DHTMSG::CONNECT>(dhtmsg msg, dht_peer
 	}
 
 
-	if(dest != dispatch_thread->get_hashkey() && dest.algo() != md_hash::DATA) {
+	hashkey target = msg_inst.get<M::TARGET_HASHKEY>().get_hashkey();
+	if(dest != dispatch_thread->get_hashkey()
+			&& dest.algo() != md_hash::DATA // mismatch expected for DATA hashkey
+			&& dest != target // mismatch expected for check route failure mitigation connection
+			) {
 		dout() << "DHT CONNECT destination mismatch, sending MISMATCH_DETECTED";
 		dhtmsg_type<DHTMSG::MISMATCH_DETECTED> mismatch(msg_inst.get<M::TARGET_HASHKEY>(), msg_inst.get<M::ROUTE_ID>(), msg_inst.get<M::DEST_HASHKEY>());
 		trackback_follow(mismatch, *connections[LOCAL_INDEX]);
 	}
-
-	hashkey target = msg_inst.get<M::TARGET_HASHKEY>().get_hashkey();
 	if(!target.initialized())
 	{
 		wout() << "Unsupported DHT hash in DHT CONNECT message, request dropped";
@@ -186,6 +188,12 @@ template<> void dht::process_msgtype_final<DHTMSG::CONNECT>(dhtmsg msg, dht_peer
 			retry = std::make_shared<dht_connect_retry>(dht_connect_retry::FIRST_HOP, src_port, false, frompeer.fingerprint);
 		else
 			retry = std::make_shared<dht_connect_retry>(dht_connect_retry::TRACKBACK, src_port, false, msg_inst.get<M::ROUTE_ID>().get_hbo());
+	}
+	{
+		dout out;
+		out << "DHT CONNECT for " << target << " with addrs";
+		for(auto& addr : addrs)
+			out << " " << addr;
 	}
 	dispatch_thread->add_peer(dht_connect_info(std::move(target), std::move(addrs), true, std::move(retry)));
 }
@@ -247,7 +255,7 @@ template<> void dht::process_msgtype_final<DHTMSG::MISMATCH_DETECTED>(dhtmsg msg
 		auto it = dht_connect_pending.find(target);
 		if(it != dht_connect_pending.end() && (it->second.flags & dhtconnect_opts::BROADCAST_RETRY)) {
 			// either peer is down or routing failure, try broadcasting CONNECT to see if some other path will get us there
-			dout() << "Got valid MISMATCH_DETECTED, retrying with broadcast CONNECT";
+			dout() << "Got valid MISMATCH_DETECTED for " << target << ", retrying with broadcast CONNECT";
 			send_broadcast_connect(mismatch.get<F::TARGET_HASHKEY>().get_hashkey());
 		}
 	} else {
@@ -945,7 +953,7 @@ void dht::send_connect(const dht_hash& dest, const dhtconnect_opts& opts, bool f
 {
 	hashkey dest_hk = dest.get_hashkey();
 	if(!follow_trackback && route_id == LOCAL_INDEX && dht_connect_pending.count(dest_hk) > 0) {
-		dout() << "send_connect: already a pending connect, not sending another default one";
+		dout() << "send_connect: already a pending connect to " << dest_hk << ", not sending another default one";
 		return;
 	}
 	auto it = peer_map.find(dest_hk);
@@ -963,10 +971,14 @@ void dht::send_connect(const dht_hash& dest, const dhtconnect_opts& opts, bool f
 			dht_connect_pending.erase(dest_hk);
 		});
 	}
-	dout() << "dht sending CONNECT to peer " << dest_hk;
 	if(local_ipaddrs.size() == 0) {
 		eout() << "Tried to send DHT CONNECT when local IP address is unknown";
 		return;
+	} else {
+		dout out;
+		out << "DHT sending CONNECT to peer " << dest_hk << " req hp addrs " << ((opts.flags & opts.REQUEST_HP_ADDRS) ? true : false) << " providing local addrs";
+		for(auto& addr: local_ipaddrs)
+		  out << " " << addr;
 	}
 	
 	ip_port holepunch_port(opts.holepunch_port ? opts.holepunch_port : htons(snow::conf[snow::DTLS_OUTGOING_PORT]));

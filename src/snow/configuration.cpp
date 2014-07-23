@@ -96,9 +96,9 @@ configuration::configuration()
 	assign_value(NATPOOL_NETWORK, "172.16.0.0");
 	assign_value(PUBLIC_IPV4_ADDRS, std::vector<uint32_t>());
 	// unsigned integers
-	assign_value(DTLS_BIND_PORT, 0); // 0 is not valid, snow installer must set a random value in the configuration file
+	assign_value(DTLS_BIND_PORT, 0); // 0 is not valid, must set an arbitrary value in the configuration file
 	assign_value(DTLS_BIND6_PORT, 8); 
-	assign_value(DTLS_OUTGOING_PORT, 0); // 0 is not valid, snow installer must set a random value in the configuration file
+	assign_value(DTLS_OUTGOING_PORT, 0); // 0 is not valid, must set an arbitrary value in the configuration file
 	assign_value(DHT_PORT, 8);
 	assign_value(NAMESERV_PORT, 8);
 	assign_value(NAMESERV_TIMEOUT_SECS, 6);

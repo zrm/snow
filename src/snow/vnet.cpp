@@ -525,7 +525,7 @@ void vnet::add_peer(dtls_ptr&& conn, snow_hello&& hello, std::vector<packet_buf>
 	vnet_peer& peer = *newpeer;
 	peer.conn->set_self(&timers, newpeer);
 	nat_map[nbo_nat_ip] = newpeer;
-	if(newpeer->conn->is_client())
+	if(newpeer->conn->is_client() == false)
 		dispatch->send_port_detect_nonce(newpeer);
 	dispatch->update_peer(ip_info(peer.conn->get_local()), ip_info(peer.conn->get_peer()), std::move(newpeer));
 	dout() << "Added peer with NAT IP " << ss_ipaddr(nbo_nat_ip);
