@@ -1,13 +1,30 @@
-CC=cc
-CXX=c++
-CFLAGS=-Wall -Wextra -O3 
-CXXFLAGS=-std=c++11 -pthread $(CFLAGS)
-SNOW_LDFLAGS=-lssl -lcrypto -lnatpmp -lminiupnpc
+CC?=cc
+CXX?=c++
+CFLAGS?=-Wall -Wextra -O3 
+CXXFLAGS?=-std=c++11 -pthread $(CFLAGS)
+INSTALL=install
+SBIN=/usr/sbin
+SNOWCONFDIR=/etc/snow
+SNOWVAR=/var/lib/snow
+LIB=/lib/`arch`-linux-gnu
+USRLIB=/usr/lib/`arch`-linux-gnu
+
+SNOW_LDFLAGS=-lssl -lcrypto
+ifdef NO_NATPMP
+CXXFLAGS+=-DNO_NATPMP
+else
+SNOW_LDFLAGS+=-lnatpmp
+endif
+ifdef NO_UPNP
+CXXFLAGS+=-DNO_UPNP
+else
+SNOW_LDFLAGS+=-lminiupnpc
+endif
 SNOW_SOURCES=common/common.cpp common/daemon.cpp common/err_out.cpp common/network.cpp common/pollvector.cpp common/windows_registry.cpp snow/configuration.cpp snow/crypto.cpp snow/dtls_dispatch.cpp snow/dht.cpp snow/handshake.cpp snow/ip_packet.cpp snow/main.cpp snow/natpmp.cpp snow/nameserv.cpp snow/netpool.cpp snow/peer_init.cpp snow/tls.cpp snow/tuntap.cpp snow/vnet.cpp
 SNOW_OBJECTS=$(SNOW_SOURCES:.cpp=.o)
 
 ifeq ($(OS),Windows_NT)
-	CXXFLAGS+=-DWINDOWS -DWINSOCK -DNOCRYPT -D_WINNT_WIN32=0x500 -DNO_UPNP -DNO_NATPMP
+	CXXFLAGS+=-DWINDOWS -DWINSOCK -DNOCRYPT -D_WINNT_WIN32=0x500
 	SNOW_OBJECTS+=applink.o
 	SNOW_LDFLAGS+=-lws2_32 -liphlpapi -L/c/msys/1.0/home/user/openssl-1.0.1e/dist/lib
 	SNOW_BINARY=snowd.exe
@@ -16,8 +33,9 @@ else
 	SNOW_BINARY=snowd
 endif
 
-SNOW_NSS_BINARY=libnss_snow.so.2
-SNOW_NSS_TEST=snow_nss_test
+SNOW_NSS_SO?=libnss_snow.so
+SNOW_NSS_BINARY?=$(SNOW_NSS_SO).2
+SNOW_NSS_TEST?=snow_nss_test
 
 all: $(SNOW_BINARY) nss_snow/$(SNOW_NSS_BINARY) nss_snow/$(SNOW_NSS_TEST)
 
@@ -35,9 +53,19 @@ applink.o:
 
 .cpp.o:
 	$(CXX) $(CXXFLAGS) $< -c -o $@
-	
+
+install: all
+	$(INSTALL) -d $(SNOWCONFDIR)
+	$(INSTALL) -d $(SNOWVAR)
+	$(INSTALL) -m 0755 -o root -g root $(SNOW_BINARY) $(SBIN)
+	$(INSTALL) -m 0755 -o root -g root nss_snow/$(SNOW_NSS_BINARY) $(LIB)
+	ln -s $(LIB)/$(SNOW_NSS_BINARY) $(USRLIB)/$(SNOW_NSS_SO)
+	$(INSTALL) -m 0700 -o root -g root ../known_peers $(SNOWVAR)
+
+uninstall:
+	-killall -q $(SNOW_BINARY)
+	-rm -ir $(USRLIB)/$(SNOW_NSS_SO) $(LIB)/$(SNOW_NSS_BINARY) $(SBIN)/$(SNOW_BINARY) $(SNOWVAR) $(SNOWCONFDIR)
 
 clean:
 	rm common/*.o snow/*.o $(SNOW_BINARY) nss_snow/$(SNOW_NSS_BINARY) nss_snow/$(SNOW_NSS_TEST)
-	
-	
+
