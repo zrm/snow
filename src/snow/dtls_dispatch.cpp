@@ -77,6 +77,8 @@ void add_addr(std::vector<sockaddrunion>& addrs, const sockaddrunion* su, uint32
 	if(su->s.sa_family == AF_INET) {
 		if(su->is_ip4_loopback()) {
 			dout() << "Ignoring IPv4 loopback address";
+		} else if(su->is_ip4_link_local()) {
+			dout() << "Ignoring IPv4 link-local address";
 		} else if(su->sa.sin_addr.s_addr == nbo_tun_addr) {
 			dout() << "Ignoring tun interface IP address " << *su;
 		} else {
@@ -86,6 +88,8 @@ void add_addr(std::vector<sockaddrunion>& addrs, const sockaddrunion* su, uint32
 	} else if(su->s.sa_family == AF_INET6) {
 		if(su->is_ip6_loopback()) {
 			dout() << "Ignoring IPv6 loopback address";
+		} else if(su->is_ip6_link_local()) {
+			dout() << "Ignoring IPv6 link-local address";
 		} else {
 			addrs.emplace_back(su->sa6);
 			dout() << "Got IPv6 interface ipaddr: " << addrs.back();
@@ -297,7 +301,7 @@ void dtls_dispatch::add_peer_visible_ipaddr(const ip_info& addr)
 		// going to trust peer because we don't know any better, but complain about it first
 		wout() << "Trusting peer that this node's public IP is " << inet_ntop(AF_INET6, addr.addr.ip6.s6_addr, addr_buf, INET6_ADDRSTRLEN)
 					  << ", consider manually specifying PUBLIC_IPV4_ADDRS in the snow configuration file or procuring a NAT-PMP or PCP enabled gateway."
-					  << " Note that some versions of snow also support UPnP gateways, but if you encounter a UPnP gateway that cannot support NAT-PMP the recommendation is that you"
+					  << " Note that some versions of snow also support UPnP gateways, but the recommendation upon encountering a UPnP-only gateway is that you"
 					  << " tender it to a local recycling firm such that it may be converted into lawn furniture.";
 		update_dht_local_ipaddrs();
 	} else {
@@ -423,7 +427,7 @@ void dtls_dispatch::peer_socket_event(size_t index, pvevent event, sock_err err)
 					} // (else ignore, no new connections during shutdown)
 				}
 			} else {
-				dout() << "Read 0 bytes from dispatch UDP sock " << sockets[index].local_addr << " (possible holepunch packet)";
+				dout() << "Read 0 bytes from " << fromaddr << " on dispatch UDP sock " << sockets[index].local_addr << " (possible holepunch packet)";
 			}
 		} catch(const e_check_sock_err& e) {
 			dout() << "dispatch peer socket recvfrom failure: " << e;

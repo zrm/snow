@@ -85,6 +85,7 @@ union ip_union
 		static const uint8_t loopback[16] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,1};
 		return memcmp(loopback, ip6.s6_addr, sizeof(loopback)) == 0;
 	}
+	bool is_link_local() const;
 	bool is_rfc1918() const;
 	// note: these compare without converting to host byte order, comparisons will not be consistent between architectures (but still useful for std::set/map etc.)
 	bool operator<(const ip_union& ip) const {
@@ -162,6 +163,14 @@ union sockaddrunion {
 		static const uint8_t loopback[16] = {0,0,0,0, 0,0,0,0 ,0,0,0,0, 0,0,0,1};
 		return memcmp(loopback, sa6.sin6_addr.s6_addr, sizeof(loopback)) == 0;
 	}
+	bool is_link_local() const { return s.sa_family == AF_INET ? is_ip4_link_local() : is_ip6_link_local(); }
+	bool is_ip4_link_local() const {
+		return (sa.sin_addr.s_addr & htonl(0xFFFF0000)) == htonl(0xA9FE0000);
+	}
+	bool is_ip6_link_local() const {
+		const uint8_t* addr = sa6.sin6_addr.s6_addr;
+		return addr[0]==0xfe && (addr[1] & 0xC0) == 0x80;
+	}
 	bool operator==(const sockaddrunion &su) const {
 		if(s.sa_family == AF_INET)
 			return memcmp(&su.sa, &sa, sizeof(sa)) == 0;
@@ -172,8 +181,10 @@ union sockaddrunion {
 
 std::ostream &operator<<(std::ostream &out, const sockaddrunion& su);
 
+void write_sockaddr(uint32_t ip4_addr, uint16_t nbo_port, sockaddrunion* su);
 // takes IPv6 or IPv4 addr in IPv6 format and converts to appropriate sockaddr
 void write_sockaddr(const uint8_t* ip6_addr, uint16_t nbo_port, sockaddrunion* su);
+sockaddrunion get_sockaddr(uint32_t ip4_addr, in_port_t nbo_port);
 sockaddrunion get_sockaddr(const in6_addr& addr, in_port_t nbo_port);
 
 // inet_ntop/inet_pton don't exist on earlier windows and defectively take non-const second argument on later windows
@@ -329,8 +340,8 @@ public:
 class sock_err
 {
 	int error;
-	sock_err(int e) : error(e) {}
 public:
+	sock_err(int e) : error(e) {}
 #ifdef WINSOCK
 	static sock_err get_last() { return sock_err(WSAGetLastError()); }
 	static void set_last(sock_err e) { WSASetLastError(e.error); }

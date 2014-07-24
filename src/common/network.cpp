@@ -66,6 +66,13 @@ void network_init()
 #endif
 }
 
+bool ip_union::is_link_local() const
+{
+	if((ip4_mapped[0] & htonl(0xFFC00000)) == htonl(0xFE800000)) // IPv6 link local
+		return true;
+	return is_ip4map6() && ((ip4_addr() & htonl(0xFFFF0000)) == htonl(0xA9FE0000)); // IPv4 link local
+}
+
 bool ip_union::is_rfc1918() const
 {
 	if(is_ip4map6()) {
@@ -433,22 +440,31 @@ bool ip_union::is_ip4map6() const {
 	return memcmp(ip4map6, ip6.s6_addr, sizeof(ip4map6)) == 0;
 }
 
+void write_sockaddr(uint32_t ip4_addr, uint16_t nbo_port, sockaddrunion* su)
+{
+	su->sa.sin_family = AF_INET;
+	su->sa.sin_addr.s_addr = ip4_addr;
+	su->sa.sin_port = nbo_port;
+}
 void write_sockaddr(const uint8_t* ip6_addr, uint16_t nbo_port, sockaddrunion* su)
 {
-	if(is_equal(ip4map6, ip6_addr, sizeof(ip4map6)))
-	{
-		su->sa.sin_family = AF_INET;
+	if(is_equal(ip4map6, ip6_addr, sizeof(ip4map6))) {
 		uint32_t ip4_addr;
-		std::copy(ip6_addr+sizeof(ip4map6),ip6_addr+sizeof(in6_addr), (uint8_t*)&ip4_addr);
-		su->sa.sin_addr.s_addr = ip4_addr;
-		su->sa.sin_port = nbo_port;
+		memcpy(&ip4_addr, ip6_addr+sizeof(ip4map6), sizeof(ip4_addr));
+		write_sockaddr(ip4_addr, nbo_port, su);
 	} else {
 		su->sa6.sin6_family = AF_INET6;
-		std::copy(ip6_addr, ip6_addr+sizeof(in6_addr), su->sa6.sin6_addr.s6_addr);
+		memcpy(su->sa6.sin6_addr.s6_addr, ip6_addr, sizeof(in6_addr));
 		su->sa6.sin6_port = nbo_port;
 	}
 }
 
+sockaddrunion get_sockaddr(uint32_t ip4_addr, in_port_t nbo_port)
+{
+	sockaddrunion rv;
+	write_sockaddr(ip4_addr, nbo_port, &rv);
+	return rv;
+}
 sockaddrunion get_sockaddr(const in6_addr& addr, in_port_t nbo_port)
 {
 	sockaddrunion rv;
