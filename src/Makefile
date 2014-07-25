@@ -1,71 +1,48 @@
-CC?=cc
-CXX?=c++
-CFLAGS?=-Wall -Wextra -O3 
-CXXFLAGS?=-std=c++11 -pthread $(CFLAGS)
-INSTALL=install
-SBIN=/usr/sbin
-SNOWCONFDIR=/etc/snow
-SNOWVAR=/var/lib/snow
-LIB=/lib/`arch`-linux-gnu
-USRLIB=/usr/lib/`arch`-linux-gnu
+include defs.mk
 
-SNOW_LDFLAGS=-lssl -lcrypto
-ifdef NO_NATPMP
-CXXFLAGS+=-DNO_NATPMP
-else
-SNOW_LDFLAGS+=-lnatpmp
-endif
-ifdef NO_UPNP
-CXXFLAGS+=-DNO_UPNP
-else
-SNOW_LDFLAGS+=-lminiupnpc
-endif
-SNOW_SOURCES=common/common.cpp common/daemon.cpp common/err_out.cpp common/network.cpp common/pollvector.cpp common/windows_registry.cpp snow/configuration.cpp snow/crypto.cpp snow/dtls_dispatch.cpp snow/dht.cpp snow/handshake.cpp snow/ip_packet.cpp snow/main.cpp snow/natpmp.cpp snow/nameserv.cpp snow/netpool.cpp snow/peer_init.cpp snow/tls.cpp snow/tuntap.cpp snow/vnet.cpp
-SNOW_OBJECTS=$(SNOW_SOURCES:.cpp=.o)
+COMMON_HDRS=$(wildcard common/*.h common/*.tpp)
+COMMON_SRCS=$(wildcard common/*.cpp)
+COMMON_OBJS=$(COMMON_SRCS:.cpp=.o)
+COMMON_DEPS=$(COMMON_HDRS) $(COMMON_SRCS)
+SNOW_HDRS=$(wildcard snow/*.h)
+SNOW_SRCS=$(wildcard snow/*.cpp)
+SNOW_OBJS+=$(SNOW_SRCS:.cpp=.o)
+SNOW_DEPS=$(COMMON_HDRS) $(SNOW_HDRS) $(SNOW_SRCS)
 
-ifeq ($(OS),Windows_NT)
-	CXXFLAGS+=-DWINDOWS -DWINSOCK -DNOCRYPT -D_WINNT_WIN32=0x500
-	SNOW_OBJECTS+=applink.o
-	SNOW_LDFLAGS+=-lws2_32 -liphlpapi -L/c/msys/1.0/home/user/openssl-1.0.1e/dist/lib
-	SNOW_BINARY=snowd.exe
-else
-	SNOW_LDFLAGS+=-lpthread
-	SNOW_BINARY=snowd
-endif
+all: $(SNOW_BINARY) nss_snow/$(NSS_SNOW_BINARY) nss_snow/$(NSS_SNOW_TEST)
 
-SNOW_NSS_SO?=libnss_snow.so
-SNOW_NSS_BINARY?=$(SNOW_NSS_SO).2
-SNOW_NSS_TEST?=snow_nss_test
+$(SNOW_BINARY): $(COMMON_OBJS) $(SNOW_OBJS) 
+	$(CXX) $(COMMON_OBJS) $(SNOW_OBJS) $(SNOW_LDFLAGS) -o $(SNOW_BINARY)
 
-all: $(SNOW_BINARY) nss_snow/$(SNOW_NSS_BINARY) nss_snow/$(SNOW_NSS_TEST)
+nss_snow/$(NSS_SNOW_BINARY) nss_snow/$(NSS_SNOW_TEST): nss_snow/$(NSS_SNOW_SRC) .nss_snow
 
-nss_snow/$(SNOW_NSS_BINARY): nss_snow/nss_snow.c
-	$(CC) $(CFLAGS) -Wno-unused-parameter -Os -fPIC -shared -o nss_snow/$(SNOW_NSS_BINARY) -Wl,-soname,$(SNOW_NSS_BINARY) nss_snow/nss_snow.c
-
-nss_snow/$(SNOW_NSS_TEST): nss_snow/nss_snow.c
-	$(CC) $(CFLAGS) -Wno-unused-parameter -Os -DDEBUG=1 -DNSS_SNOW_MAIN_TEST nss_snow/nss_snow.c -o nss_snow/$(SNOW_NSS_TEST)
-
-$(SNOW_BINARY): $(SNOW_OBJECTS) 
-	$(CXX) $(SNOW_OBJECTS) $(SNOW_LDFLAGS) -o $(SNOW_BINARY)
-
-applink.o:
-	$(CC) $(CFLAGS) /c/Program\ Files\ \(x86\)/mingw-builds/x32-4.8.1-posix-dwarf-rev5/mingw32/lib/gcc/i686-w64-mingw32/4.8.1/include/openssl/applink.c -o applink.o
-
-.cpp.o:
-	$(CXX) $(CXXFLAGS) $< -c -o $@
+.INTERMEDIATE: .common .snow .nss_snow
+$(COMMON_OBJS): $(COMMON_DEPS) .common
+	@touch $@
+$(SNOW_OBJS): $(SNOW_DEPS) .snow
+	@touch $@
+.common:
+	make -C common
+.snow:
+	make -C snow
+.nss_snow:
+	make -C nss_snow
 
 install: all
 	$(INSTALL) -d $(SNOWCONFDIR)
 	$(INSTALL) -d $(SNOWVAR)
 	$(INSTALL) -m 0755 -o root -g root $(SNOW_BINARY) $(SBIN)
-	$(INSTALL) -m 0755 -o root -g root nss_snow/$(SNOW_NSS_BINARY) $(LIB)
-	ln -s $(LIB)/$(SNOW_NSS_BINARY) $(USRLIB)/$(SNOW_NSS_SO)
+	$(INSTALL) -m 0755 -o root -g root nss_snow/$(NSS_SNOW_BINARY) $(LIB)
+	ln -s $(LIB)/$(NSS_SNOW_BINARY) $(USRLIB)/$(NSS_SNOW_SO)
 	$(INSTALL) -m 0700 -o root -g root ../known_peers $(SNOWVAR)
 
 uninstall:
 	-killall -q $(SNOW_BINARY)
-	-rm -ir $(USRLIB)/$(SNOW_NSS_SO) $(LIB)/$(SNOW_NSS_BINARY) $(SBIN)/$(SNOW_BINARY) $(SNOWVAR) $(SNOWCONFDIR)
+	-rm -i $(USRLIB)/$(NSS_SNOW_SO) $(LIB)/$(NSS_SNOW_BINARY)
+	-rm -ir $(SBIN)/$(SNOW_BINARY) $(SNOWVAR) $(SNOWCONFDIR)
 
 clean:
-	rm common/*.o snow/*.o $(SNOW_BINARY) nss_snow/$(SNOW_NSS_BINARY) nss_snow/$(SNOW_NSS_TEST)
+	rm -f */*.o */.depend nss_snow/$(NSS_SNOW_BINARY) nss_snow/$(NSS_SNOW_TEST) $(SNOW_BINARY)
 
+
+ 
