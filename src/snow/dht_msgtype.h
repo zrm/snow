@@ -42,7 +42,7 @@
 
 #ifndef DHT_MSGTYPE_H
 #define DHT_MSGTYPE_H
-#include"../common/network.h"
+#include "../common/byte_order.h"
 
 // TODO: DHT messages should provide list of pluggable alternative transports to DTLS (e.g. CurveCP, IPSec) and allow for future improvements like a snow IP transport layer protocol
 	// it is expected that every client should support DTLS (since it requires no kernel support), but others may be more efficient if available
@@ -134,15 +134,15 @@ struct variable_single_field_base : public dynamic_field_base<T>
 {
 	typedef dynamic_field_base<T> base;
 	// size for the wire
-	static inline size_t size(const uint8_t* ptr) { return byte_order<uint16_t>(ptr).get_hbo() + sizeof(uint16_t); }
+	static inline size_t size(const uint8_t* ptr) { return read_hbo<uint16_t>(ptr) + sizeof(uint16_t); }
 	inline size_t size() const { return size(base::field); } 
 	inline void copy_to(uint8_t* to) const { memcpy(to, base::field, size()); }
-	inline size_t data_size() const { return byte_order<uint16_t>(base::field).get_hbo(); } // size of actual data (not including size header)
+	inline size_t data_size() const { return read_hbo<uint16_t>(base::field); } // size of actual data (not including size header)
 	const uint8_t* data() const { return base::field + sizeof(uint16_t); } // start of variable data (after size header)
 	variable_single_field_base(const uint8_t* raw) : base(raw) {}
 	variable_single_field_base(uint16_t len, const uint8_t* field_data) : base(nullptr, true) {
 		uint8_t* newfield = new uint8_t[len + sizeof(uint16_t)]; // need non-const temporary to initialize
-		byte_order<uint16_t>(len).write_nbo(newfield);
+		write_hbo<uint16_t>(len, newfield);
 		memcpy(newfield+sizeof(uint16_t), field_data, len);
 		base::field = newfield;
 	}
@@ -157,8 +157,8 @@ class dht_header : public field_base<dht_header, std::pair<uint16_t,uint16_t> >
 public:
 	inline static uint16_t get_msglen(dhtmsg m) { return get_msglen(m.msg); }
 	inline static uint16_t get_msgtype(dhtmsg m) { return get_msgtype(m.msg); }
-	inline static uint16_t get_msglen(const uint8_t* msg) { return byte_order<uint16_t>(msg).get_hbo(); }
-	inline static uint16_t get_msgtype(const uint8_t* msg) { return byte_order<uint16_t>((msg+sizeof(uint16_t))).get_hbo(); }
+	inline static uint16_t get_msglen(const uint8_t* msg) { return read_hbo<uint16_t>(msg); }
+	inline static uint16_t get_msgtype(const uint8_t* msg) { return read_hbo<uint16_t>(msg + sizeof(uint16_t)); }
 	inline uint16_t get_msglen() { return ntohs(base::field.first); }
 	inline uint16_t get_msgtype() { return ntohs(base::field.second); }
 	dht_header(DHTMSG msgtype) : base(std::make_pair(0, htons(static_cast<uint16_t>(msgtype)))) {}
@@ -171,13 +171,13 @@ struct dht_hash :  public dynamic_field_base<dht_hash>
 {
 	typedef dynamic_field_base<dht_hash> base;
 	// size for the wire
-	static inline size_t size(const uint8_t* ptr) { return byte_order<uint16_t>(ptr).get_hbo() + 2*sizeof(uint16_t); }
+	static inline size_t size(const uint8_t* ptr) { return read_hbo<uint16_t>(ptr) + 2*sizeof(uint16_t); }
 	inline size_t size() const { return size(base::field); } 
 	inline void copy_to(uint8_t* to) const { memcpy(to, base::field, size()); }
 	// size of actual variable data (not including size+algo header)
-	inline size_t data_size() const { return byte_order<uint16_t>(base::field).get_hbo(); } 
+	inline size_t data_size() const { return read_hbo<uint16_t>(base::field); } 
 	const uint8_t* data() const { return base::field + 2*sizeof(uint16_t); } // start of variable data (after size header and algorithm)
-	uint16_t algo() const { return byte_order<uint16_t>(base::field+sizeof(uint16_t)).get_hbo(); }
+	uint16_t algo() const { return read_hbo<uint16_t>(base::field+sizeof(uint16_t)); }
 	dht_hash(const uint8_t* raw) : base(raw) {}
 	dht_hash(const hashkey& hk) : dht_hash(hk.algo(), hk.size(), hk.get_raw()) {}
 	dht_hash(uint16_t algo_hbo, uint16_t datalen, const uint8_t* field_data) : base(nullptr, true) {
@@ -185,8 +185,8 @@ struct dht_hash :  public dynamic_field_base<dht_hash>
 		if(len > UINT16_MAX)
 			throw std::out_of_range("excessive hash length in dht_hash");
 		uint8_t* newfield = new uint8_t[len]; // need non-const temporary to initialize
-		byte_order<uint16_t>(datalen).write_nbo(newfield); // set hash len
-		byte_order<uint16_t>(algo_hbo).write_nbo(newfield+sizeof(datalen));
+		write_hbo<uint16_t>(datalen, newfield); // set hash len
+		write_hbo<uint16_t>(algo_hbo, newfield + sizeof(datalen));
 		memcpy(newfield+sizeof(datalen)+sizeof(algo_hbo), field_data, datalen);
 		base::field = newfield;
 	}
@@ -219,7 +219,7 @@ class dht_ip_addrs : public dynamic_field_base<dht_ip_addrs>
 			throw std::out_of_range("dht_ip_addrs supplied with empty set of IP addresses");
 		size_t len = sizeof(uint16_t) + num*ip_info::size();
 		uint8_t* newfield = new uint8_t[len];
-		byte_order<uint16_t>(num-1).write_nbo(newfield);
+		write_hbo<uint16_t>(num-1, newfield);
 		field = newfield;
 		return newfield + sizeof(uint16_t);
 	}
@@ -238,11 +238,11 @@ public:
 	}
 
 	inline size_t size() const { return size(field); }
-	static inline size_t size(const uint8_t *raw) { return sizeof(uint16_t) + (byte_order<uint16_t>(raw).get_hbo() + 1) * ip_info::size(); }
+	static inline size_t size(const uint8_t *raw) { return sizeof(uint16_t) + (read_hbo<uint16_t>(raw) + 1) * ip_info::size(); }
 	inline void copy_to(uint8_t* to) const { memcpy(to, field, size()); }
 	std::vector<ip_info> get() {
 		std::vector<ip_info> addrs;
-		size_t num_addrs = byte_order<uint16_t>(field).get_hbo() + 1;
+		size_t num_addrs = read_hbo<uint16_t>(field) + 1;
 		const uint8_t *next = field + sizeof(uint16_t);
 		for(size_t i=0; i < num_addrs; ++i){
 			addrs.push_back(next);
@@ -260,7 +260,7 @@ private:
 public:
 	// simple uint16_t stored in network byte order
 	uint16_base(uint16_t nbo_uint16) : base(nbo_uint16) {}
-	uint16_base(const uint8_t* raw) : base(byte_order<uint16_t>(raw).get_nbo()) {}
+	uint16_base(const uint8_t* raw) : base(read_nbo<uint16_t>(raw)) {}
 	uint16_t get_nbo() { return base::field; }
 	uint16_t get_hbo() { return ntohs(base::field); }
 };
@@ -273,7 +273,7 @@ private:
 public:
 	// simple uint64_t stored in network byte order
 	uint64_base(uint64_t nbo_uint64) : base(nbo_uint64) {}
-	uint64_base(const uint8_t* raw) : base(byte_order<uint64_t>(raw).get_nbo()) {}
+	uint64_base(const uint8_t* raw) : base(read_nbo<uint64_t>(raw)) {}
 	uint64_t get_nbo() { return base::field; }
 	uint64_t get_hbo() { return be64toh(base::field); }
 };
@@ -282,7 +282,7 @@ class unix_time : public uint64_base<unix_time>
 {
 	typedef uint64_base<unix_time> base;
 public:
-	unix_time(uint64_t hbo_uint64) : base(byte_order<uint64_t>(hbo_uint64).get_nbo()) {}
+	unix_time(uint64_t hbo_uint64) : base(htobe64(hbo_uint64)) {}
 	unix_time(const uint8_t* raw) : base(raw) {}
 };
 
@@ -290,7 +290,7 @@ class nonce64 : public uint64_base<nonce64>
 {
 	typedef uint64_base<nonce64> base;
 public:
-	nonce64(uint64_t hbo_uint64) : base(byte_order<uint64_t>(hbo_uint64).get_nbo()) {}
+	nonce64(uint64_t hbo_uint64) : base(htobe64(hbo_uint64)) {}
 	nonce64(const uint8_t* raw) : base(raw) {}
 };
 
@@ -298,7 +298,7 @@ class trackback_route_id : public uint64_base<trackback_route_id>
 {
 	typedef uint64_base<trackback_route_id> base;
 public:
-	trackback_route_id(uint64_t hbo_uint64) : base(byte_order<uint64_t>(hbo_uint64).get_nbo()) {}
+	trackback_route_id(uint64_t hbo_uint64) : base(htobe64(hbo_uint64)) {}
 	trackback_route_id(const uint8_t* raw) : base(raw) {}
 };
 
@@ -307,7 +307,7 @@ class dht_version : public uint16_base<dht_version>
 {
 	typedef uint16_base<dht_version> base;
 public:
-	dht_version(uint16_t hbo_uint16) : base(byte_order<uint16_t>(hbo_uint16).get_nbo()) {}
+	dht_version(uint16_t hbo_uint16) : base(htons(hbo_uint16)) {}
 	dht_version(uint8_t* raw) : base(raw) {}
 };
 
@@ -323,7 +323,7 @@ class dht_fieldlen : public uint16_base<dht_fieldlen>
 {
 	typedef uint16_base<dht_fieldlen> base;
 public:
-	dht_fieldlen(uint16_t hbo_uint16) : base(byte_order<uint16_t>(hbo_uint16).get_nbo()) {}
+	dht_fieldlen(uint16_t hbo_uint16) : base(htons(hbo_uint16)) {}
 	dht_fieldlen(const uint8_t* raw) : base(raw) {}
 };
 
@@ -331,7 +331,7 @@ class dht_fieldtype : public uint16_base<dht_fieldtype>
 {
 	typedef uint16_base<dht_fieldtype> base;
 public:
-	dht_fieldtype(uint16_t hbo_uint16) : base(byte_order<uint16_t>(hbo_uint16).get_nbo()) {}
+	dht_fieldtype(uint16_t hbo_uint16) : base(htons(hbo_uint16)) {}
 	dht_fieldtype(const uint8_t* raw) : base(raw) {}
 };
 
@@ -350,7 +350,7 @@ class dht_hashalgo : public uint16_base<dht_hashalgo>
 {
 	typedef uint16_base<dht_hashalgo> base;
 public:
-	dht_hashalgo(uint16_t hbo_uint16) : base(byte_order<uint16_t>(hbo_uint16).get_nbo()) {}
+	dht_hashalgo(uint16_t hbo_uint16) : base(htons(hbo_uint16)) {}
 	dht_hashalgo(const uint8_t* raw) : base(raw) {}
 };
 

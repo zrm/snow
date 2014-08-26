@@ -1,0 +1,11 @@
+; You can put local DNS records in this file
+; The format is the same as root.names, you can find some examples there
+; IPv4 records start with "A"
+; IPv6 records start with "AAAA"
+; alias records start with "CNAME"
+; Here are some other examples:
+; A alice 10.0.0.2 10.0.0.3
+; AAAA example.com 2001:0db8:85a3:0042:1000:8a2e:0370:7334
+; CNAME example.net example.com
+; CNAME bob foo.key
+

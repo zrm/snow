@@ -45,6 +45,10 @@
 #include"dtls_dispatch.h"
 
 
+// NOTE: THIS IS NOT A PUBLIC INTERFACE
+// this wire protocol may change at any time without notice and is likely to do so
+// its only purpose is to allow queries to a specific build of snow from a corresponding build of nss_snow or sdns
+
 void nameserv::do_lookup(size_t /*index, always QUERY_FD*/, pvevent event, sock_err err)
 {
 	if(event != pvevent::read) {
@@ -59,7 +63,7 @@ void nameserv::do_lookup(size_t /*index, always QUERY_FD*/, pvevent event, sock_
 		size_t len = nameserv_sock.recvfrom(buf, BUFSIZE, &peer_addr);
 		if(len == 4/*IPv4 addr size*/) {
 			do_reverse_lookup(buf, peer_addr);
-		} else if(len > 0 && strnlen(buf, len) + 1 == static_cast<size_t>(len)) {
+		} else if(len > 0 && strnlen(buf, len) + 1 == len) {
 			do_forward_lookup(buf, len, peer_addr);
 		} else {
 			eout() << "nameserv recvfrom() returned " << len << "bytes, data indicated " << strnlen(buf,len);
@@ -78,11 +82,15 @@ void nameserv::do_reverse_lookup(const char* buf, const sockaddrunion& peer_addr
 	uint32_t nbo_lookup_addr;
 	memcpy(&nbo_lookup_addr, buf, sizeof(nbo_lookup_addr));
 	dout() << "Got reverse query for " << ss_ipaddr(nbo_lookup_addr);
-	try {
-		send_response(lookup_cache.get(nbo_lookup_addr).key_string(), nbo_lookup_addr, peer_addr);
-	} catch(const e_not_found &) {
-		dout() << "reverse query response was: not found";
-		send_response("", nbo_lookup_addr, peer_addr);
+	const hashkey &key = lookup_cache.get(nbo_lookup_addr);
+	if(key.initialized()) {
+		send_response(key.key_string(), nbo_lookup_addr, peer_addr);
+	} else if((nbo_lookup_addr & nbo_natpool_netmask) == nbo_natpool_network) {
+		dout() << "reverse query response was: not found (address in pool but unassigned)";
+		send_response("unassigned.key", nbo_lookup_addr, peer_addr);
+	} else {
+		dout() << "reverse query response was: not found (not in address pool)";
+		send_response("", 1, nbo_lookup_addr, peer_addr);
 	}
 }
 void nameserv::do_forward_lookup(const char* buf, size_t len, const sockaddrunion& peer_addr)
@@ -94,13 +102,13 @@ void nameserv::do_forward_lookup(const char* buf, size_t len, const sockaddrunio
 		dout() << "Got forward query for " << buf;
 		hashkey key(buf);
 		if(key.initialized()) {
-			try {
-				uint32_t lu_addr = lookup_cache.get(key);
+			uint32_t lu_addr = lookup_cache.get(key);
+			if(lu_addr != 0) {
 				dout() << "Sending nameserv query response";
 				send_response(buf, len, lu_addr, peer_addr);
 				// have vnet touch the idle count when this happens to preserve expectations about continued connection lifetime
 				dispatch->touch_connection(key);
-			} catch(const e_not_found &) {
+			} else {
 				pending_lookups[key].emplace(peer_addr, buf);
 				timers.add(snow::conf[snow::NAMESERV_TIMEOUT_SECS]+1, [this, key]() {
 					auto pending_it = pending_lookups.find(key);
@@ -129,7 +137,7 @@ void nameserv::send_response(const char* lu, size_t lu_size, uint32_t nbo_ipaddr
 	memcpy(buf, lu, lu_size);
 	memcpy(buf+lu_size, &nbo_ipaddr, sizeof(nbo_ipaddr));
 	try {
-		// if sendto returns 0 or -1 it could be EWOULDBLOCK or some error, but client can try again in that case
+		// sendto could produce EWOULDBLOCK or similar, but client can try again in that case
 		size_t sent = nameserv_sock.sendto(buf, lu_size + sizeof(nbo_ipaddr), dest);
 		dout() << "nameserv send_response sent " << sent << " byte response with " << lu_size << " byte lookup";
 	} catch(const check_err_exception &e) {

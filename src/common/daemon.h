@@ -55,8 +55,10 @@ public:
 	os_event(const os_event &p) = default;
 	static const os_event shutdown;
 	static const os_event reload;
+	bool operator==(os_event e) { return event == e.event; }
 };
 
 os_event wait_for_os_event();
+void register_signals();
 
 #endif // DAEMON_H

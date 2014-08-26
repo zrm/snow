@@ -132,49 +132,46 @@ union sockaddrunion {
 	sockaddrunion() {}
 	sockaddrunion(const sockaddr_in& si) { memcpy(&sa, &si, sizeof(si)); }
 	sockaddrunion(const sockaddr_in6& si6) { memcpy(&sa6, &si6, sizeof(si6)); }
+	sockaddrunion(const char* addrstr, in_port_t port); // parse addrstr using inet_pton, throws e_invalid_input
+	sockaddrunion(const std::string& addrstr, in_port_t port) : sockaddrunion(addrstr.c_str(), port) {}
 	in_port_t get_ip_port() const {
-		return (s.sa_family == AF_INET) ? sa.sin_port : sa6.sin6_port;
+		return (s.sa_family == AF_INET) ? sa.sin_port : (s.sa_family == AF_INET6) ? sa6.sin6_port : 0;
 	}
 	void set_ip_port(in_port_t port) {
 		if(s.sa_family == AF_INET)
 			sa.sin_port = port;
-		else
+		else if(s.sa_family == AF_INET6)
 			sa6.sin6_port = port;
 	}
 
 	ip_union get_ip_union() const {
-		return (s.sa_family == AF_INET) ? ip_union(sa.sin_addr.s_addr) : ip_union(sa6.sin6_addr);
+		return (s.sa_family == AF_INET) ? ip_union(sa.sin_addr.s_addr) : (s.sa_family == AF_INET6) ? ip_union(sa6.sin6_addr) : ip_union();
 	}
-	// write IPv6 addr or IPv4 addr in IPv6 format
-	void write_ipaddr(uint8_t* to) const {
-		if(s.sa_family == AF_INET) {
-			memcpy(to, ip4map6, sizeof(ip4map6));
-			uint32_t ip4_addr = sa.sin_addr.s_addr; // s_addr is "long" which is the wrong size on most 64-bit architectures
-			memcpy(to+sizeof(ip4map6), &ip4_addr, sizeof(ip4_addr));
-		} else {
-			memcpy(to, sa6.sin6_addr.s6_addr, sizeof(in6_addr::s6_addr));
-		}
-	}
-	bool is_loopback() const { return s.sa_family == AF_INET ? is_ip4_loopback() : is_ip6_loopback(); }
+	// write 16-byte IPv6 addr or IPv4 addr in 16-byte IPv6 format
+	void write_ipaddr(uint8_t* to) const;
+	bool is_loopback() const { return s.sa_family == AF_INET ? is_ip4_loopback() : s.sa_family == AF_INET6 ? is_ip6_loopback() : false; }
 	bool is_ip4_loopback() const {
-		return (sa.sin_addr.s_addr & htonl(0xff000000)) == htonl(0x7f000000); // 127.x.x.x
+		return s.sa_family == AF_INET && (sa.sin_addr.s_addr & htonl(0xff000000)) == htonl(0x7f000000); // 127.x.x.x
 	}
 	bool is_ip6_loopback() const {
 		static const uint8_t loopback[16] = {0,0,0,0, 0,0,0,0 ,0,0,0,0, 0,0,0,1};
-		return memcmp(loopback, sa6.sin6_addr.s6_addr, sizeof(loopback)) == 0;
+		return s.sa_family == AF_INET6 && memcmp(loopback, sa6.sin6_addr.s6_addr, sizeof(loopback)) == 0;
 	}
-	bool is_link_local() const { return s.sa_family == AF_INET ? is_ip4_link_local() : is_ip6_link_local(); }
+	bool is_link_local() const { return s.sa_family == AF_INET ? is_ip4_link_local() : s.sa_family == AF_INET6 ? is_ip6_link_local() : false; }
 	bool is_ip4_link_local() const {
-		return (sa.sin_addr.s_addr & htonl(0xFFFF0000)) == htonl(0xA9FE0000);
+		return s.sa_family == AF_INET && (sa.sin_addr.s_addr & htonl(0xFFFF0000)) == htonl(0xA9FE0000);
 	}
 	bool is_ip6_link_local() const {
 		const uint8_t* addr = sa6.sin6_addr.s6_addr;
-		return addr[0]==0xfe && (addr[1] & 0xC0) == 0x80;
+		return s.sa_family == AF_INET6 && addr[0]==0xfe && (addr[1] & 0xC0) == 0x80;
 	}
 	bool operator==(const sockaddrunion &su) const {
-		if(s.sa_family == AF_INET)
-			return memcmp(&su.sa, &sa, sizeof(sa)) == 0;
-		return memcmp(&su.sa6, &sa6, sizeof(sa6)) == 0;
+		if(s.sa_family != su.s.sa_family) return false;
+		if(s.sa_family == AF_UNSPEC) return true;
+		if(s.sa_family == AF_INET) return memcmp(&su.sa, &sa, sizeof(sa)) == 0;
+		if(s.sa_family == AF_INET6) return memcmp(&su.sa6, &sa6, sizeof(sa6)) == 0;
+		// FIXME: always returning false for AF_LOCAL
+		return false;
 	}
 	bool operator!=(const sockaddrunion &su) const { return !(*this == su); }
 };

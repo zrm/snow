@@ -65,7 +65,7 @@
 int daemon_main()
 {
 	network_init(); // (WSAStartup, must be done before anything else)
-	
+	register_signals();
 	snow::conf.read_config();
 	csocket nameserv_sock;
 	try {
@@ -87,6 +87,11 @@ int daemon_main()
 	// TODO: privilege separation
 	// (set up any other sockets or anything needing privs)
 	// (drop privileges here)
+	// the main sticking point is currently that if local IP addrs change and DTLS_BIND[6]_PORT is privileged it will need to be bound again to the new address
+	// a sensible solution may be to open a socketpair and then fork(),
+		// with one process retaining root or CAP_NET_BIND_SERVICE [see: http://www.lst.de/~okir/blackhats/node125.html]
+		// then process with privileges registers with OS (e.g. NETLINK) to be notified if IP addr changes and sends sockets to other process,
+		// the other drops all privileges and does everything else
 
 	try { tls_conn::tlsInit();	}
 	catch(const e_not_found &e) {
@@ -173,7 +178,7 @@ int main(int argc, char** argv)
 			return daemon_main();
 	} catch(const e_exception &e) {
 		eout() << "main() caught fatal or unhandled error: " << e;
-		std::cout << "main() caught fatal or unhandled error: " << e << std::endl;
+		std::cerr << daemon_name << " main() caught fatal or unhandled error: " << e << std::endl;
 	}
 	return EXIT_FAILURE;
 }

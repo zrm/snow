@@ -45,11 +45,9 @@
 #include<set>
 #include"../common/dbuf.h"
 #include"../common/network.h"
-#include"../common/pollvector.h"
 #include"crypto.h"
 #include"tls.h"
 #include"dtls_dispatch.h"
-#include"natpmp.h"
 
 struct packet_buf
 {
@@ -187,11 +185,6 @@ class snow_handshake_conn : public dtls_peer
 			{ packets.emplace_back(std::move(buf), size); }
 	}
 	void send_hello();
-	static void retransmit_hello_static(std::weak_ptr<snow_handshake_conn>& wptr) {
-		if(auto ptr = wptr.lock())
-			{ ptr->retransmit_hello(true); }
-		// (else connection is gone, either succeeded and moved to vnet or failed and disconnected)
-	}
 	void retransmit_hello(bool request_retransmit = false);
 	// check_status: returns true if status was a success-indicating tls_conn return value,
 	// marks for removal if status was serious error (may return false w/o removal, e.g. EWOULDBLOCK)

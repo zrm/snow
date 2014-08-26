@@ -45,6 +45,7 @@
 #include "tls.h"
 #include "peer_init.h"
 #include "ip_packet.h"
+#include "../common/pbind.h"
 
 dtls_dispatch* snow_handshake_conn::dispatch(nullptr);
 peer_init* snow_handshake_conn::pinit(nullptr);
@@ -365,8 +366,7 @@ void snow_handshake_conn::retransmit_hello(bool request_retransmit)
 			{ hello_send.set_flag(snow_hello::REQUEST_RETRANSMIT); }
 		send_hello();
 		// send another retransmit with request_retransmit in a bit, if conn is still here then one peer or both has not received actionable hello
-		timers->add(std::chrono::steady_clock::now() + std::chrono::milliseconds(retransmit_msecs),
-						  std::bind(&snow_handshake_conn::retransmit_hello_static, std::weak_ptr<snow_handshake_conn>(self)));
+		timers->add(std::chrono::steady_clock::now() + std::chrono::milliseconds(retransmit_msecs), PBIND(&snow_handshake_conn::retransmit_hello, self, true));
 		retransmit_msecs = (retransmit_msecs < 1000) ? retransmit_msecs*2 : 2000;
 	} else {
 		// retransmit count exceeded

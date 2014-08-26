@@ -43,6 +43,7 @@
 #ifndef CONFIGURATION_BASE_H
 #define CONFIGURATION_BASE_H
 #include<string>
+#include<vector>
 
 /*
 How to use configuration:
@@ -83,9 +84,17 @@ and access configuration values through anything that includes your configuratio
 template<class T>
 void ss_convert(const std::string &s, T &val);
 
-// bool specialization to use 'true/false' for bool instead of '0/1'
+// bool specialization to use 'true/false' for bool instead of '1/0'
 template<>
 void ss_convert(const std::string &s, bool &val);
+
+// string specialization: no conversion necessary, value is already a string
+template<>
+inline void ss_convert(const std::string &s, std::string &val) { val = s; }
+
+struct in6_addr;
+void ipv4_convert(const std::string &s, std::vector<uint32_t>& val);
+void ipv6_convert(const std::string &s, std::vector<in6_addr>& val);
 
 // split line on spaces, advance startpos to end of next word+1
 std::string next_word(const std::string &line, size_t *startpos);

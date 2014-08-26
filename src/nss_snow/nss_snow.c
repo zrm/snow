@@ -84,7 +84,7 @@ enum nss_status _nss_snow_gethostent_r(struct hostent * result, char * buf, size
 	*errnop = ENOENT;
 	*h_errnop = HOST_NOT_FOUND;
 	return NSS_STATUS_NOTFOUND;
-	// TODO: possibly consider returning entries for already-connected hosts?
+	// TODO: possibly consider returning entries for already-connected hosts? (probably not: worsens information leak on multiuser machines)
 }
 
 static ssize_t nss_snow_get_response(const void* sendbuf, size_t sendbuf_size, void* recvbuf, size_t recvbuf_size, unsigned timeout_secs, int *errnop)
@@ -233,7 +233,8 @@ enum nss_status _nss_snow_gethostbyaddr_r(const void *addr, socklen_t len, int a
 	uint32_t nbo_ipaddr = ((const struct in_addr*)addr)->s_addr;
 	enum nss_status ret_val = NSS_STATUS_UNAVAIL;
 	// only 3 sec timeout because reverse lookups should be immediate or not there
-	ssize_t nbytes = nss_snow_get_response(&nbo_ipaddr, sizeof(nbo_ipaddr), buf, buflen, 3, errnop);
+	const unsigned timeout_secs = 3;
+	ssize_t nbytes = nss_snow_get_response(&nbo_ipaddr, sizeof(nbo_ipaddr), buf, buflen, timeout_secs, errnop);
 	if(nbytes <= 0) {
 		// TODO: I think this might should really be EAGAIN/EWOULDBLOCK
 		if(*errnop == ETIMEDOUT) {
@@ -243,7 +244,7 @@ enum nss_status _nss_snow_gethostbyaddr_r(const void *addr, socklen_t len, int a
 	} else {
 		// see if buf was big enough
 		const size_t IPv4ADDR_SIZE = 4;
-		size_t namelen = strnlen(buf, buflen) + 1/*'\0'*/;
+		size_t namelen = strnlen(buf, nbytes) + 1/*'\0'*/;
 		if(namelen == 1) {
 			*errnop = ENOENT;
 			*h_errnop = HOST_NOT_FOUND;

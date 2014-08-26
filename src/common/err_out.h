@@ -244,6 +244,7 @@ public:
 	virtual void print(std::ostream &out) const;
 };
 bool is_sock_err(int rv);
+bool is_invalid_sock(SOCKET sock);
 #else
 class e_check_sock_err : public check_err_exception
 {
@@ -251,6 +252,7 @@ public:
 	e_check_sock_err(const std::string &s, bool print_errno) : check_err_exception(s, print_errno) {}
 };
 inline bool is_sock_err(int rv) { return rv < 0; }
+inline bool is_invalid_sock(int sock) { return sock < 0; }
 #endif
 inline void check_sock_err(int err, const char *msg, bool perr = true)
 {

@@ -1,9 +1,9 @@
 /*	snow
 	Copyright (C) 2012-2014 David Geib, Trustiosity LLC
 	This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License Version 3
+	it under the terms of the GNU Affero General Public License Version 3
 	(AGPLv3) with the following Supplemental Terms:
-	
+
 	A. Supplemental Terms. These supplemental terms are a part of the agreement
 	and are not "further restrictions" under the AGPLv3. All licensees
 	including all downstream licensees are subject to these supplemental terms.
@@ -30,14 +30,14 @@
 	International Traffic in Arms Regulations, or if the Software would
 	infringe a proprietary right of a third party that is recognized in the
 	jurisidiction in question. 
-	
-	This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU Affero General Public License for more details.
+
+	You should have received a copy of the GNU Affero General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #ifndef COMMON_H
@@ -48,21 +48,12 @@
 #include<condition_variable>
 #include<functional>
 #include<queue>
-#include<sstream>
 #include<algorithm>
 #include<string>
 #include<cstring>
 #include<iomanip>
 #include<random>
-#ifdef WINDOWS
-#include<winsock2.h>
-#include<in6addr.h>
-#else
-#ifdef __linux
-#include<endian.h>
-#else
-#include<sys/endian.h>
-#endif
+#ifndef WINDOWS
 #include<sys/select.h>
 #include<arpa/inet.h>
 #include<unistd.h>
@@ -137,67 +128,6 @@ inline void base32_decode(const char in[8], uint8_t data_out[5])
 		data_out[i] = stack & 0xff;
 	}
 }
-
-template<typename T> class byte_order;
-
-template<> class byte_order<uint16_t>
-{
-private:
-	uint16_t val; // network byte order
-public:
-	byte_order(uint16_t v) : val(htons(v)) {}
-	byte_order(const uint8_t* raw_nbo) { memcpy(&val, raw_nbo, sizeof(val)); }
-	uint16_t get_hbo() { return ntohs(val); }
-	uint16_t get_nbo() { return val; }
-	void write_nbo(uint8_t* to_nbo) { memcpy(to_nbo, &val, sizeof(val)); }
-};
-
-template<> class byte_order<uint32_t>
-{
-private:
-	uint32_t val; // network byte order
-public:
-	byte_order(uint32_t v) : val(htonl(v)) {}
-	byte_order(const uint8_t* raw_nbo) { memcpy(&val, raw_nbo, sizeof(val)); }
-	uint32_t get_hbo() { return ntohl(val); }
-	uint32_t get_nbo() { return val; }
-	void write_nbo(uint8_t* to_nbo) { memcpy(to_nbo, &val, sizeof(val)); }
-};
-
-#ifndef be64toh
-inline uint64_t be64toh(uint64_t v)
-{
-	if(ntohl(1) == 1)
-		return v;
-	uint64_t rv = ntohl(v & 0xffffffff);
-	rv <<= 32;
-	rv += ntohl(v >> 32);
-	return rv;
-}
-#endif
-#ifndef htobe64
-inline uint64_t htobe64(uint64_t v)
-{
-	if(htonl(1) == 1)
-		return v;
-	uint64_t rv = htonl(v & 0xffffffff);
-	rv <<= 32;
-	rv += htonl(v >> 32);
-	return rv;
-}
-#endif
-
-template<> class byte_order<uint64_t>
-{
-private:
-	uint64_t val; // network byte order
-public:
-	byte_order(uint64_t v) : val(htobe64(v)) {}
-	uint64_t get_hbo() { return be64toh(val); }
-	byte_order(const uint8_t* raw_nbo) { memcpy(&val, raw_nbo, sizeof(val)); }
-	uint64_t get_nbo() { return val; }
-	void write_nbo(uint8_t* to_nbo) { memcpy(to_nbo, &val, sizeof(val)); }
-};
 
 
 // this is useful for deferring execution of something until this object falls out of scope

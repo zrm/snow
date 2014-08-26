@@ -97,6 +97,33 @@ std::ostream &operator<<(std::ostream &out, const ip_union& ipu)
 	return out;
 }
 
+sockaddrunion::sockaddrunion(const char* addrstr, in_port_t port)
+{
+	memset(this, 0, sizeof(sockaddrunion));
+	if(inet_pton(AF_INET, addrstr, &sa.sin_addr.s_addr) > 0) {
+		sa.sin_family = AF_INET;
+		sa.sin_port = port;
+	} else if(inet_pton(AF_INET6, addrstr, sa6.sin6_addr.s6_addr) > 0) {
+		sa6.sin6_family = AF_INET6;
+		sa6.sin6_port = port;
+	} else {
+		throw e_invalid_input("sockaddrunion() could not parse address");
+	}
+}
+
+void sockaddrunion::write_ipaddr(uint8_t* to) const {
+	if(s.sa_family == AF_INET) {
+		memcpy(to, ip4map6, sizeof(ip4map6));
+		uint32_t ip4_addr = sa.sin_addr.s_addr; // s_addr is "long" which is the wrong size on most 64-bit architectures
+		memcpy(to+sizeof(ip4map6), &ip4_addr, sizeof(ip4_addr));
+	} else if(s.sa_family == AF_INET6) {
+		memcpy(to, sa6.sin6_addr.s6_addr, sizeof(in6_addr::s6_addr));
+	} else {
+		dout() << "sockaddrunion asked to write IP addr of non-IP sockaddrunion";
+		memset(to, 0, sizeof(in6_addr::s6_addr));
+	}
+}
+
 std::ostream &operator<<(std::ostream &out, const sockaddrunion& su)
 {
 	char buf[INET6_ADDRSTRLEN];
@@ -285,10 +312,8 @@ void csocket::close() {
 			check_sock_err(closesocket(sd), "closesocket()");
 #		else
 			while(::close(sd) < 0) {
-				if(errno != EINTR) {
-					eout_perr() << "csocket: error closing socket descriptor";
-					break;
-				}
+				if(errno != EINTR)
+					throw e_check_sock_err("csocket: error closing socket descriptor", true);
 			}
 #		endif
 	}

@@ -101,7 +101,7 @@ configuration::configuration()
 	assign_value(DTLS_OUTGOING_PORT, 0); // 0 is not valid, must set an arbitrary value in the configuration file
 	assign_value(DHT_PORT, 8);
 	assign_value(NAMESERV_PORT, 8);
-	assign_value(NAMESERV_TIMEOUT_SECS, 6);
+	assign_value(NAMESERV_TIMEOUT_SECS, 7);
 	assign_value(DTLS_IDLE_TIMEOUT_SECS, 4000);
 	assign_value(HEARTBEAT_SECONDS, 115);
 	assign_value(HEARTBEAT_RETRIES, 5);
@@ -112,6 +112,7 @@ configuration::configuration()
 	assign_value(VIRTUAL_INTERFACE_MTU, 1419);
 	// boolean values
 	assign_value(DHT_RFC1918_ADDRESSES, true);
+	assign_value(DHT_LINK_LOCAL_ADDRESSES, false);
 	assign_value(NEVER_TRUST_PEER_VISIBLE_IPADDRS, false);
 }
 

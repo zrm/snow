@@ -49,7 +49,6 @@
 #include "tuntap.h"
 #include "handshake.h"
 #include "configuration.h"
-#include "natpmp.h"
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
@@ -125,7 +124,7 @@ private:
 	std::unordered_set< std::shared_ptr<vnet_peer> > peers;
 	tuntap tun;
 	timer_queue& timers;
-	uint32_t natpool_network, natpool_netmask;
+	uint32_t natpool_network, natpool_netmask; // network byte order
 	address_assignment_map address_assignments;
 	buffer_list& buflist;
 

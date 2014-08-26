@@ -40,6 +40,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+
 #ifndef DHT_H
 #define DHT_H
 #include<cstring>
@@ -57,7 +58,7 @@
 #include"crypto.h"
 #include"configuration.h"
 
-	
+
 
 /*
 Simple distributed hash table

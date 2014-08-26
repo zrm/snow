@@ -39,18 +39,20 @@
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-
+#include<iostream>
 #include<algorithm>
 #include<functional>
 #include<unordered_map>
-#include<iostream>
 #include<fstream>
 #include<string>
+#include<cstring>
 #include<sstream>
 #include<vector>
-#include<cstring>
 #include<stdexcept>
+#include"configuration_base.h"
 #include"err_out.h"
+#include"network.h"
+
 
 template<class T>
 void ss_convert(const std::string &s, T &val)
@@ -75,6 +77,39 @@ void ss_convert(const std::string &s, bool &val)
     val = v;
 }
 
+void ipv4_convert(const std::string &s, std::vector<uint32_t>& val)
+{
+	std::vector<uint32_t> addrs;
+	size_t pos=0;
+	while(pos < s.size()) {
+		std::string addr = next_word(s, &pos);
+		dout() << "ipv4_convert " << addr;
+		addrs.emplace_back();
+		if(inet_pton(AF_INET, addr.c_str(), &addrs.back()) != 1) {
+			std::string msg = std::string("could not convert IPv4 address \"") + addr + "\"";
+			throw e_invalid_input(msg);
+		}
+	}
+	val = std::move(addrs);
+}
+
+void ipv6_convert(const std::string &s, std::vector<in6_addr>& val)
+{
+	std::vector<in6_addr> addrs;
+	size_t pos=0;
+	while(pos < s.size()) {
+		std::string addr = next_word(s, &pos);
+		dout() << "ipv6_convert " << addr;
+		addrs.emplace_back();
+		if(inet_pton(AF_INET6, addr.c_str(), addrs.back().s6_addr) != 1) {
+			std::string msg = std::string("could not convert IPv6 address \"") + addr + "\"";
+			throw e_invalid_input(msg);
+		}
+	}
+	val = std::move(addrs);
+}
+
+
 std::string next_word(const std::string &line, size_t *startpos)
 {
 	size_t start = *startpos;
@@ -84,10 +119,11 @@ std::string next_word(const std::string &line, size_t *startpos)
 	while(end < line.size() && !isspace(line[end]))
 		++end;
 	std::string rv = line.substr(start, end-start);
-	*startpos = end+1;
+	while(end < line.size() && isspace(line[end]))
+		++end;
+	*startpos = end;
 	return std::move(rv);
 }
-
 
 template<class T, class...ARGS>
 void configuration_base<T, ARGS...>::check_initialization() {
@@ -162,12 +198,14 @@ void configuration_base<>::read_config_file(const std::string &fn)
 		return;
 	}
 	std::string line;
+	bool err = false;
 	for(size_t linenum = 1; std::getline(infile, line); ++linenum) {
 		if(line.size() == 0 || line[0] == '#')
 			continue;
 		size_t eq = line.find_first_of('=');
 		if(eq == std::string::npos) {
 			eout() << "Error reading configuration file " << fn << " line " << linenum << ": line must be of the form \"OPTION=VALUE\"";
+			err = true;
 			continue;
 		}
 		std::string keyname = configuration_base_data::normalize(line.substr(0, eq));
@@ -177,6 +215,7 @@ void configuration_base<>::read_config_file(const std::string &fn)
 			dout() << "Value assignment map entries:";
 			for(auto &x : data->value_assignment_map)
 				dout() << x.first;
+			err = true;
 			continue;
 		}
 		try {
@@ -185,8 +224,14 @@ void configuration_base<>::read_config_file(const std::string &fn)
 			dout() << "read_config_file parsed line: " << line;
 		} catch(const std::ios_base::failure& e) {
 			eout() << "Error reading configuration file " << fn << " line " << linenum << ": invalid value";
+			err = true;
+		} catch(const e_exception& e) {
+			eout() << "Error reading configuration file " << fn << " line " << linenum << ": " << e;
+			err = true;
 		}
 	}
 	infile.close();
+	if(err)
+		abort();
 	sanity_check_values();
 }

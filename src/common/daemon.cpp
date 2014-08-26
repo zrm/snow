@@ -167,15 +167,6 @@ int daemon_start(int (*dmain)(), const char *daemon_name)
 	umask(S_IWGRP | S_IWOTH);
 	check_err(setsid(), "setsid() failed to create new session");
 	check_err(chdir("/"), "Failed to change directory to '/'");
-	struct sigaction signal_action;
-	memset(&signal_action, 0, sizeof(signal_action));
-	sigemptyset(&signal_action.sa_mask);
-	signal_action.sa_handler = SIG_IGN;
-	sigaction(SIGPIPE, &signal_action, nullptr);
-	signal_action.sa_handler = &handle_signal;
-	sigaction(SIGTERM, &signal_action, nullptr);
-	sigaction(SIGINT, &signal_action, nullptr);
-	// TODO: maybe add some other os_event objects for different signals
 	return dmain();
 }
 #endif
@@ -196,4 +187,20 @@ os_event wait_for_os_event()
 		os_event_wait_obj.cond.wait(ul);
 	}
 	return rv;
+}
+
+void register_signals()
+{
+#ifndef WINDOWS
+	struct sigaction signal_action;
+	memset(&signal_action, 0, sizeof(signal_action));
+	sigemptyset(&signal_action.sa_mask);
+	signal_action.sa_handler = SIG_IGN;
+	sigaction(SIGPIPE, &signal_action, nullptr);
+	signal_action.sa_handler = &handle_signal;
+	sigaction(SIGTERM, &signal_action, nullptr);
+	sigaction(SIGINT, &signal_action, nullptr);
+	sigaction(SIGUSR1, &signal_action, nullptr);
+	// TODO: maybe add some other os_event objects for different signals
+#endif
 }

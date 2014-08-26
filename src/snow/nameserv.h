@@ -68,6 +68,7 @@ class nameserv_lookup_cache
 {
 	std::unordered_map<hashkey, uint32_t> forward;
 	std::unordered_map<uint32_t, hashkey> reverse;
+	const hashkey invalid_key; // empty hashkey signifying not found
 public:
 	void insert(const hashkey& key, uint32_t addr) {
 		forward[key] = addr;
@@ -83,13 +84,13 @@ public:
 	uint32_t get(const hashkey& key) {
 		auto it = forward.find(key);
 		if(it == forward.end())
-			throw e_not_found("nameserv_lookup_cache::get(key)");
+			return 0;
 		return it->second;
 	}
 	const hashkey& get(uint32_t addr) {
 		auto it = reverse.find(addr);
 		if(it == reverse.end())
-			throw e_not_found("nameserv_lookup_cache::get(addr)");
+			return invalid_key;
 		return it->second;
 	}
 };
@@ -106,6 +107,8 @@ private:
 	csocket nameserv_sock;
 	nameserv_lookup_cache lookup_cache;
 	uint32_t nbo_local_interface_addr; // IP address on the tuntap interface
+	uint32_t nbo_natpool_network;
+	uint32_t nbo_natpool_netmask;
 	bool running;
 	const std::string local_keystring; // always "local.key."
 	struct pending_lookup
@@ -124,12 +127,18 @@ private:
 	void send_response(const std::string& lu, uint32_t ipaddr, const sockaddrunion& dest) { send_response(lu.c_str(), lu.size()+1, ipaddr, dest); }
 	void send_response(const char *lu, size_t lu_size, uint32_t ipaddr, const sockaddrunion& dest);
 	void lookup_response(const hashkey& hk, uint32_t nat_addr);
+	void do_set_local_addr(const hashkey& key, uint32_t nbo_interface_addr) {
+		nbo_local_interface_addr = nbo_interface_addr;
+		lookup_cache.insert(key, nbo_interface_addr);
+	}
 public:
-	nameserv(csocket&& sock, dht* dht, dtls_dispatch_thread* dd) : dht_thread(dht), dispatch(dd), nameserv_sock(std::move(sock)), running(true), local_keystring("local.key.") {}
+	nameserv(csocket&& sock, dht* dht, dtls_dispatch_thread* dd) : dht_thread(dht), dispatch(dd), nameserv_sock(std::move(sock)), running(true), local_keystring("local.key.") {
+		inet_pton(AF_INET, snow::conf[snow::NATPOOL_NETWORK].c_str(), &nbo_natpool_network);
+		nbo_natpool_netmask = htonl(UINT32_MAX << (32 - snow::conf[snow::NATPOOL_NETMASK_BITS]));
+	}
 	void lookup_complete(const hashkey& key, uint32_t nat_addr) { interthread_msg_queue.put(std::bind(&nameserv::lookup_response, this, key, nat_addr)); }
 	void set_local_addr(const hashkey& key, uint32_t nbo_interface_addr) {
-		nbo_local_interface_addr = nbo_interface_addr; // TODO: this may need to be an atomic write, or go in the other thread
-		interthread_msg_queue.put(std::bind(&nameserv::lookup_response, this, key, nbo_interface_addr));
+		interthread_msg_queue.put(std::bind(&nameserv::do_set_local_addr, this, key, nbo_interface_addr));
 	}
 	void shutdown_thread() { interthread_msg_queue.put([this]() { running = false; }); }
 	void operator()(); // thread entrypoint

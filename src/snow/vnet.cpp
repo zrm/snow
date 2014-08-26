@@ -701,9 +701,11 @@ void vnet::send_dtls_heartbeats()
 	size_t idle_threshold = (timeout_secs / heartbeat_secs) + (timeout_secs % heartbeat_secs) ? 1 : 0; // round up
 	// TODO: consider making heartbeat per-connection instead of doing them all at once: is the timer overhead worth it? conversely, is latency of doing maybe thousands at once problematic?
 		// if there are a lot of connections doing all at once like this could cause EWOULDBLOCK -> thundering hurd retries -> mass disconnects
+		// on the other hand, sending all the heartbeats at once is better for mobile connection radios
 	// TODO: it doesn't really make sense to have both peers send heartbeats on timers, it just causes twice as much traffic
 		// it would make more sense to put the heartbeat duration in the snow hello and then only have the primary do it, using min(local, peer) duration
 		// then secondary doesn't actually send heartbeat but keeps track of the last one it received from primary and checks periodically whether to disconnect because it was too long ago
+		// also, when one device is cellular and the other one isn't, regardless of who the primary is, the mobile device sends the heartbeat (if both mobile then same rule as both not)
 	for(const std::shared_ptr<vnet_peer>& peer : peers) {
 		if(peer->idle_count++ > idle_threshold) {
 			dout() << "vnet: peer at NAT IP " << ss_ipaddr(peer->nat_addr) << " disconnected as idle too long";

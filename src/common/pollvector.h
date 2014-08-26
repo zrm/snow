@@ -132,8 +132,13 @@ class pollvector
 		// primary disadvantage is locking, but maybe do some profiling to see if it's serious (or implement lock-free tqueue)
 #if defined(PV_USE_EPOLL)
 	int epfd;
-	epoll_event * epevents;
-	size_t epevents_size; // number of events allocated in events array
+	std::vector<epoll_event> epevents;
+	struct eperr {
+		size_t index;
+		int err;
+		eperr(size_t idx, int e) : index(idx), err(e) {}
+	};
+	std::vector<eperr> errs;
 #elif defined(PV_USE_KQUEUE)
 	int kq;
 #elif defined(WINSOCK)
@@ -167,7 +172,6 @@ class pollvector
 	// poll() requires an array of pollfd, which means we can't just put pollfd in whatever object, it needs its own array/vector that needs to stay synced with associated data
 	std::vector<pollfd> poll;
 #endif
-
 	struct pv_data {
 		T tdata;
 		std::function<void(size_t,pvevent,sock_err)> event_fn;
@@ -182,9 +186,9 @@ class pollvector
 #elif defined(PV_USE_EPOLL)
 		epoll_event epevents;
 		int sock;
-		inline void setidx(size_t idx) { (void) (sizeof(size_t)>4 ? (epevents.data.u64 = idx) : (epevents.data.u32 = idx)); }
+		inline void setepidx(size_t idx) { if(sizeof(size_t)>4) epevents.data.u64 = idx; else epevents.data.u32 = idx; }
 		pv_data(T &&t, const std::function<void(size_t,pvevent,sock_err)> &f, int sd, pvevent ev, size_t idx)
-			: tdata(std::forward<T>(t)), event_fn(f), sock(sd) { epevents.events = ev.event; setidx(idx); }
+			: tdata(std::forward<T>(t)), event_fn(f), sock(sd) { epevents.events = ev.event; setepidx(idx); }
 #else // poll()
 		pv_data(T &&t, const std::function<void(size_t,pvevent,sock_err)> &f) : tdata(std::forward<T>(t)), event_fn(f) {}
 #endif
@@ -212,6 +216,7 @@ public:
 	void emplace_back(csocket::sock_t sock, pvevent event, const std::function<void(size_t,pvevent,sock_err)> &eventfn, Args&&... args);
 	T& back() { return data.back().tdata; }
 	size_t size() { return data.size(); }
+	// event_exec_wait may throw check_err_exception, but only for very serious errors (e.g. epfd is EBADF)
 	void event_exec_wait(int timeout);
 	// note: if you call set_fd(INVALID_SOCKET) because you will close the socket yourself, do this *before* closing the socket
 		// some implementations (e.g. epoll) require the socket to be unregistered, and can do strange things if you don't

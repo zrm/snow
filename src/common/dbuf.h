@@ -68,8 +68,12 @@ public:
 			{ return std::string((char*)buf, bufsize); }
         size_t size() const
                 { return bufsize; }
-        void resize(size_t sz)
-                { bufsize = sz; buf = (uint8_t*) realloc(buf, bufsize); if(bufsize && !buf) throw std::bad_alloc(); }
+		void resize(size_t sz) {
+				void* newbuf = realloc(buf, sz);
+				if(sz && newbuf == nullptr) throw std::bad_alloc();
+				buf = (uint8_t*)newbuf;
+				bufsize = sz;
+		}
 		void free() { ::free(buf); buf = nullptr; bufsize = 0; }
         dbuf() : buf(nullptr), bufsize(0) {}
 		explicit dbuf(size_t sz) : buf(nullptr) { resize(sz); }

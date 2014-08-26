@@ -47,9 +47,6 @@ pollvector<T>::pollvector(const std::function<void(size_t)> &cleanup, size_t min
 #ifdef PV_USE_EPOLL
 	const unsigned default_size = 8;
 	check_err(epfd = epoll_create(default_size), "Could not create epoll descriptor");
-	epevents_size = default_size;
-	epevents = reinterpret_cast<epoll_event*>(malloc(sizeof(epoll_event) * epevents_size));
-	if(epevents == nullptr) throw std::bad_alloc();
 #endif
 }
 
@@ -62,10 +59,9 @@ pollvector<T>::~pollvector()
 			eout_perr() << pvname << ": Failed to close epoll descriptor";
 			break;	
 		} else {
-			dout() << pvname << ": EINTR closing epoll descriptor";
+			dout() << pvname << ": EINTR closing epoll descriptor, retrying";
 		}
 	}
-	free(epevents);
 #elif defined(WINSOCK)
 	// this is a bit particular, we have to:
 		// 1) cancel the events for every entry (so that every peer_id index is SIZE_MAX and has cancel in tqueue and every event occurrence has either been added or will not be)
@@ -84,17 +80,11 @@ template<class T> template<class... Args>
 void pollvector<T>::emplace_back(csocket::sock_t sock, pvevent event, const std::function<void(size_t,pvevent,sock_err)> &ef, Args&&... args)
 {
 #if defined(PV_USE_EPOLL)
-	if(data.size() >= epevents_size) {
-		epevents_size = epevents_size ? epevents_size*2 : 8;
-		epevents = reinterpret_cast<epoll_event*>(realloc(epevents, sizeof(epoll_event)*epevents_size));
-		if(epevents==nullptr) throw std::bad_alloc();
-	}
 	data.emplace_back(std::forward<Args>(args)..., ef, sock, event, data.size());
-	if(sock >= 0) {
-		if(epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &data.back().epevents) < 0) {
-			data.pop_back();
-			throw check_err_exception("epoll_ctl adding socket for new pollvector element");
-		}
+	epevents.emplace_back();
+	if(sock >= 0 && event.event != 0) {
+		if(epoll_ctl(epfd, EPOLL_CTL_ADD, sock, &data.back().epevents) < 0)
+			dout_perr() << pvname << ": BUG: failed to add sock " << sock << " to epoll at index " << (data.size()-1);
 	}
 #elif defined(PV_USE_KQUEUE)
 	// [add to kqueue]
@@ -204,12 +194,16 @@ void pollvector<T>::set_fd(size_t index, csocket::sock_t fd, bool close_existing
 	data[index].sock = fd;
 	set_events(index, data[index].events);
 #elif defined(PV_USE_EPOLL)
-	if(data[index].sock >= 0)
+	if(data[index].sock >= 0 && data[index].epevents.events != 0)
 		if(epoll_ctl(epfd, EPOLL_CTL_DEL, data[index].sock, &data[index].epevents) < 0)
 			dout_perr() << pvname << " set_fd failed to remove old fd " << data[index].sock;
 	data[index].sock = fd;
-	if(fd >= 0)
-		check_err(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &data[index].epevents), "epoll_ctl adding socket for set_fd()");
+	if(fd >= 0 && data[index].epevents.events != 0) {
+		if(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &data[index].epevents) < 0) {
+			errs.emplace_back(index, errno);
+			dout_perr() << "epoll_ctl failed in pollvector::set_fd for sock " << fd << " at idx " << index;
+		}
+	}
 #else // poll()
 	poll[index].fd = fd;
 #endif
@@ -249,15 +243,23 @@ void pollvector<T>::set_events(size_t index, pvevent events)
 			data[index].event_handle.event_select(data[index].sock, data[index].events.event);
 		} catch(const e_exception &e) {
 			wout() << pvname << " pollvector::set_events: " << e;
-#warning fixme: handle exception: call event fn with error event?
+			// TODO: handle exception: call event fn with error event? or maybe do like epoll implementation and defer until event_exec_wait
 		}
 		data[index].peer_id = new winsock_peer(this, data[index].index, data[index].event_handle.ev);
 	}
 #elif defined(PV_USE_EPOLL)
-	if(data[index].epevents.events != events.event) {
-		data[index].epevents.events = events.event;
-		if(data[index].sock >= 0)
-			check_err(epoll_ctl(epfd, EPOLL_CTL_MOD, data[index].sock, &data[index].epevents), "epoll_ctl modifying socket events");
+	uint32_t oldevent = data[index].epevents.events;
+	data[index].epevents.events = events.event;
+	if(data[index].sock < 0 || oldevent == events.event)
+		return;
+	int op = EPOLL_CTL_MOD;
+	if(oldevent == 0)
+		op = EPOLL_CTL_ADD;
+	else if(events.event == 0)
+		op = EPOLL_CTL_DEL;
+	if(epoll_ctl(epfd, op, data[index].sock, &data[index].epevents) < 0) {
+		errs.emplace_back(index, errno);
+		dout_perr() << "epoll_ctl failed in pollvector::set_events for sock " << data[index].sock << " at idx " << index;
 	}
 #else
 	poll[index].events = events.event;
@@ -290,9 +292,10 @@ void pollvector<T>::mark_defunct(size_t index)
 	cancel_events(index);
 #elif defined(PV_USE_EPOLL)
 	data[index].epevents.events = 0;
-	if(data[index].sock >= 0)
+	if(data[index].sock >= 0 && data[index].epevents.events != 0)
 		if(epoll_ctl(epfd, EPOLL_CTL_DEL, data[index].sock, &data[index].epevents) < 0)
-			dout_perr() << pvname << " failed to EPOLL_CTL_DEL socket";
+			dout_perr() << pvname << " mark_defunct() failed to EPOLL_CTL_DEL socket " << data[index].sock << " at " << index;
+	data[index].epevents.events = 0;
 #else
 	poll[index].events = pvevent::none;
 #endif
@@ -315,11 +318,14 @@ bool pollvector<T>::cleanup_defunct_connections()
 			defunct_connections.pop_back(); // pop remove_index and any duplicates
 		if(remove_index >= size() || remove_index < dynamic_start) {
 			// TODO: this might want to be a throw in mark_defunct() in addition to this here
-			eout() << "BUG: Tried to remove a non-existent connection in " << pvname << " pollvector: " << remove_index;
+			eout() << "BUG: Tried to remove a non-existent socket in " << pvname << " pollvector: " << remove_index;
 			continue;
 		}
+		size_t pre_size = defunct_connections.size(); // cleanup_handler or reorder_remove might add defunct connections, if so resort vector
 		cleanup_handler(remove_index);
 		reorder_remove(remove_index);
+		if(pre_size != defunct_connections.size())
+			std::sort(defunct_connections.begin(), defunct_connections.end());
 	} while(defunct_connections.size() > 0);
 	return true;
 }
@@ -341,19 +347,26 @@ void pollvector<T>::reorder_remove(size_t remove_index)
 	if(data[remove_index].peer_id != nullptr)
 		*data[remove_index].index = SIZE_MAX;
 #elif defined(PV_USE_EPOLL)
-	if(data[remove_index].sock >= 0) {
+	if(data[remove_index].sock >= 0 && data[remove_index].epevents.events != 0) {
 		if(epoll_ctl(epfd, EPOLL_CTL_DEL, data[remove_index].sock, &data[remove_index].epevents) < 0)
 			dout_perr() << pvname << " reorder_remove failed to remove fd " << data[remove_index].sock;
 	}
-	data.back().setidx(remove_index);
-	if(remove_index != data.size()-1 && data.back().sock >= 0)
-		if(epoll_ctl(epfd, EPOLL_CTL_MOD, data.back().sock, &data.back().epevents) < 0)
-			dout_perr() << pvname << " epoll_ctl failed to move existing socket";
-	if(epevents_size > (data.size()<<2)) {
-		epevents_size>>=1;
-		epevents = reinterpret_cast<epoll_event*>(realloc(epevents, sizeof(epoll_event)*epevents_size));
-		if(epevents == nullptr && epevents_size) throw std::bad_alloc();
+	if(remove_index != data.size()-1) {
+		data.back().setepidx(remove_index);
+		if(data.back().sock >= 0 && data.back().epevents.events != 0) {
+			if(epoll_ctl(epfd, EPOLL_CTL_MOD, data.back().sock, &data[remove_index].epevents) < 0) {
+				dout_perr() << pvname << " epoll_ctl failed to move existing last socket to remove_index";
+				data.back().event_fn(data.size()-1, pvevent::error, sock_err(errno));
+			}
+		}
 	}
+	// exec any errors added by the cleanup handler or previous removal before invalidating indexes, ignoring any errors for remove_index (which is now gone)
+	for(size_t i=0; i < errs.size(); ++i) {
+		if(errs[i].index == remove_index) continue;
+		data[errs[i].index].event_fn(errs[i].index, pvevent::error, sock_err(errs[i].err));
+	}
+	errs.clear();
+	epevents.pop_back();
 #else // poll()
 	poll[remove_index] = std::move(poll.back());
 	poll.pop_back();
@@ -371,8 +384,15 @@ void print_epoll_error(uint32_t events);
 template<class T>
 void pollvector<T>::event_exec_wait(int timeout)
 {
+#ifdef PV_USE_EPOLL
+	// we report errors such as EBADF from epoll_ctl here because it is more consistent with what poll() and others do
+	// (do this before cleanup_defunct_connections invalidates indexes)
+	for(size_t i=0; i < errs.size(); ++i)
+		data[errs[i].index].event_fn(errs[i].index, pvevent::error, sock_err(errs[i].err));
+	errs.clear();
+#endif
 	if(cleanup_defunct_connections())
-		return; // if connections were cleaned up return immediately, timeout could now be too long
+		return; // if connections were cleaned up return immediately, timeout could now be too long because cleanup could add a timer
 #ifdef WINSOCK
 	try {
 		wsa_event tqueue_event;
@@ -396,9 +416,9 @@ void pollvector<T>::event_exec_wait(int timeout)
 	}
 	// dout() << "Doing event_exec_wait() with WINSOCK select() timeout " << timeout << ", sds: " << socket_map;
 #elif defined(PV_USE_EPOLL)
-	int numevents = epoll_wait(epfd, epevents, epevents_size, timeout);
-	while(numevents < 0 && errno==EINTR)
-		numevents = epoll_wait(epfd, epevents, epevents_size, timeout);
+	int numevents = epoll_wait(epfd, epevents.data(), epevents.size(), timeout);
+	if(numevents < 0 && errno==EINTR)
+		return; // could have waited an arbitrary amount of time before EINTR, can't retry again with same timeout
 	if(numevents < 0) {
 		eout_perr() << pvname << " pollvector epoll_wait()";
 		throw check_err_exception("epoll_wait()");
@@ -423,8 +443,9 @@ void pollvector<T>::event_exec_wait(int timeout)
 	}
 #else // poll()
 	int numevents = ::poll(poll.data(), poll.size(), timeout);
-	if(is_sock_err(numevents))
-	{
+	if(is_sock_err(numevents) && sock_err::get_last() == sock_err::eintr)
+		return;
+	if(is_sock_err(numevents)) {
 		eout() << pvname << " pollvector poll(): " << sock_err::get_last();
 		throw e_check_sock_err("poll()", true);
 	}

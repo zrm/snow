@@ -63,7 +63,6 @@
 
 
 
-
 dht_newconn dht::get_client()
 {
 	dht_newconn rv;

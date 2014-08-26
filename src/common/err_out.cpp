@@ -73,6 +73,10 @@ bool is_sock_err(int rv)
 {
 	return rv == SOCKET_ERROR;
 }
+bool is_invalid_sock(SOCKET sock)
+{
+	return sock == INVALID_SOCKET:
+}
 e_check_sock_err::e_check_sock_err(const std::string &s, bool print_errno) : check_err_exception(s, false) { err = WSAGetLastError(); }
 void e_check_sock_err::print(std::ostream &out) const
 {
