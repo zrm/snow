@@ -59,11 +59,11 @@ sdns also allows DNS CNAME aliases to be used for key names:
 
 \# echo CNAME alice baaaac6rxjmmenb7m5txgpe3nmmrrh4z4ohcr7sxqkrvbk4csbrrorpw7.key >> /etc/sdns/local.names
 
-$ ping alice
-PING baaaac6rxjmmenb7m5txgpe3nmmrrh4z4ohcr7sxqkrvbk4csbrrorpw7.key (172.16.0.2) 56(84) bytes of data.
-64 bytes from baaaac6rxjmmenb7m5txgpe3nmmrrh4z4ohcr7sxqkrvbk4csbrrorpw7.key (172.16.0.2): icmp\_req=1 ttl=64 time=0.614 ms
-64 bytes from baaaac6rxjmmenb7m5txgpe3nmmrrh4z4ohcr7sxqkrvbk4csbrrorpw7.key (172.16.0.2): icmp\_req=2 ttl=64 time=0.603 ms
-^C
+$ ping alice  
+PING baaaac6rxjmmenb7m5txgpe3nmmrrh4z4ohcr7sxqkrvbk4csbrrorpw7.key (172.16.0.2) 56(84) bytes of data.  
+64 bytes from baaaac6rxjmmenb7m5txgpe3nmmrrh4z4ohcr7sxqkrvbk4csbrrorpw7.key (172.16.0.2): icmp\_req=1 ttl=64 time=0.614 ms  
+64 bytes from baaaac6rxjmmenb7m5txgpe3nmmrrh4z4ohcr7sxqkrvbk4csbrrorpw7.key (172.16.0.2): icmp\_req=2 ttl=64 time=0.603 ms  
+^C  
 
 sdns operates recursively by default, if you want you can set an upstream DNS server like this:
 
