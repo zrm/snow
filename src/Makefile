@@ -49,13 +49,10 @@ install: all
 	$(INSTALL) -m 0755 -o root -g root $(SDNS_BINARY) $(SBIN)
 	$(INSTALL) -m 0444 -o root -g root $(SDNS_ROOTHINTS) $(SDNSCONFDIR)
 	$(INSTALL) -m 0644 -o root -g root $(SDNS_LOCALNAMES) $(SDNSCONFDIR)
-	$(INSTALL) -m 0755 -o root -g root $(NSS_SNOW_BINARY) $(LIB)
-	-ln -s $(LIB)/$(NSS_SNOW_BINARY) $(USRLIB)/$(NSS_SNOW_SO)
 	$(INSTALL) -m 0600 -o root -g root ../known_peers $(SNOWVAR)
 
 uninstall:
 	-killall -q -- $(SNOW_BINARY) $(SDNS_BINARY)
-	-rm -i -- $(USRLIB)/$(NSS_SNOW_SO) $(LIB)/$(NSS_SNOW_BINARY)
 	-rm -ir -- $(SBIN)/$(SNOW_BINARY) $(SNOWVAR) $(SNOWCONFDIR)
 	-rm -ir -- $(SBIN)/$(SDNS_BINARY) $(SDNSFWDDIR) $(SDNSCONFDIR)
 

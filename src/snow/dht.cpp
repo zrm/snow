@@ -217,7 +217,7 @@ template<> void dht::process_msgtype<DHTMSG::HOLEPUNCH_ADDRS>(dhtmsg msg, dht_pe
 	if(hp_msg.get<F::ROUTE_ID>().get_hbo() != 0) {
 		if(trackback_follow(hp_msg, frompeer))
 			return;
-		hp_msg.set<F::ROUTE_ID>(trackback_route_id(0UL));
+		hp_msg.set<F::ROUTE_ID>(trackback_route_id(static_cast<uint64_t>(0)));
 	}
 	route_msg(hp_msg.get_msg(), frompeer);
 }
@@ -240,7 +240,7 @@ template<> void dht::process_msgtype<DHTMSG::MISMATCH_DETECTED>(dhtmsg msg, dht_
 	dhtmsg_type<DHTMSG::MISMATCH_DETECTED> mismatch(msg);
 	typedef dht::msg_enum<DHTMSG::MISMATCH_DETECTED>::FIELDS F;
 	if(!trackback_follow(mismatch, frompeer)) {
-		mismatch.set<F::ROUTE_ID>(trackback_route_id(0UL));
+		mismatch.set<F::ROUTE_ID>(trackback_route_id(static_cast<uint64_t>(0)));
 		route_msg(mismatch.get_msg(), frompeer);
 	}
 }
@@ -337,7 +337,7 @@ template<> void dht::process_msgtype_final<DHTMSG::CHECK_ROUTE>(dhtmsg msg, dht_
 			if(route_map.antecedent() != it->second.peer && route_map.antecedent()->index != LOCAL_INDEX) {
 				// adding trackback route with route_id 0, which is reserved to never be assigned and if received, peer should revert msg to normal routing
 				dhtmsg_type<DHTMSG::CHECK_ROUTE> check_peer(dht_hash(route_map.antecedent()->fingerprint),
-					nonce64(0UL), trackback_route_id(add_trackback_route(0, *route_map.antecedent())));
+					nonce64(static_cast<uint64_t>(0)), trackback_route_id(add_trackback_route(0, *route_map.antecedent())));
 				write_peer(check_peer.get_msg(), *it->second.peer, *connections[LOCAL_INDEX]);
 			}
 		} else {
@@ -1074,7 +1074,7 @@ void dht::check_dht_peer_count()
 	for(size_t i = connections.size() - DHT_NONPEER::NUM_NONPEER_FDS; i < snow::conf[snow::DHT_BOOTSTRAP_TARGET]; ++i) 
 		connect_known_peer();
 	// check that existing peers are appropriately spaced to get ~log(n) lookups
-	uint64_t nbo_val=0, hbo_val=0, bit = 1UL << (sizeof(nbo_val)*8 - 1);
+	uint64_t nbo_val=0, hbo_val=0, bit = 1ULL << (sizeof(nbo_val)*8 - 1);
 	const hashkey& hk = dispatch_thread->get_hashkey();
 	memcpy(&nbo_val, hk.get_raw(), std::min<size_t>(hk.size(), sizeof(nbo_val)));
 	hbo_val = be64toh(nbo_val) + bit;
@@ -1244,7 +1244,7 @@ void dht::cleanup_connection(size_t remove_index)
 		// can't reroute it w/o knowing where message boundaries are, but we don't currently track that
 	
 	if(remove_peer->flags[dht_peer::DISCONNECT_CHECK_ROUTE] && route_map.successor()->index != LOCAL_INDEX) {
-		dhtmsg_type<DHTMSG::CHECK_ROUTE> check(dht_hash(connections[LOCAL_INDEX]->fingerprint),	nonce64(0UL), trackback_route_id(0UL));
+		dhtmsg_type<DHTMSG::CHECK_ROUTE> check(dht_hash(connections[LOCAL_INDEX]->fingerprint),	nonce64(static_cast<uint64_t>(0)), trackback_route_id(static_cast<uint64_t>(0)));
 		route_msg(check.get_msg(), *connections[LOCAL_INDEX], *route_map.successor());
 	}
 	

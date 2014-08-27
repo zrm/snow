@@ -60,10 +60,6 @@ public:
                 { return buf; }
         uint8_t* data() { return buf; }
 		const uint8_t* data() const { return buf; }
-		uint8_t& operator[](size_t idx)
-                { return buf[idx]; }
-		const uint8_t& operator[](size_t idx) const
-                { return buf[idx]; }
         std::string get_string() const
 			{ return std::string((char*)buf, bufsize); }
         size_t size() const

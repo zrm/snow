@@ -173,7 +173,7 @@ enum nss_status _nss_snow_gethostbyname_r(const char * name, struct hostent * re
 	enum nss_status ret_val = NSS_STATUS_UNAVAIL;
 	ssize_t nbytes = nss_snow_get_response(name, namelen, buf, namelen + IPv4ADDR_SIZE, 90, errnop);
 	if(nbytes != (ssize_t)(namelen + IPv4ADDR_SIZE)) {
-		if(DEBUG) printf("size err: nbytes %ld wanted %ld\n", nbytes, namelen+IPv4ADDR_SIZE);
+		if(DEBUG) printf("size err: nbytes %zd wanted %zu\n", nbytes, namelen+IPv4ADDR_SIZE);
 		if(*errnop == ETIMEDOUT) {
 			ret_val = NSS_STATUS_TRYAGAIN;
 			*h_errnop = TRY_AGAIN;

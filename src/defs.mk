@@ -11,8 +11,6 @@ SDNSCONFDIR?=/etc/sdns
 SDNSFWDDIR?=/etc/sdns/forwarders
 SDNS_ROOTHINTS?=sdns/root.names
 SDNS_LOCALNAMES?=sdns/local.names
-LIB?=/lib/`arch`-linux-gnu
-USRLIB?=/usr/lib/`arch`-linux-gnu
 
 SNOW_LDFLAGS=-lssl -lcrypto
 ifdef NO_NATPMP
