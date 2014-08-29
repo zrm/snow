@@ -57,6 +57,10 @@ int daemon_main()
 		tcp_thread tcp;
 		eventloop eloop(&tcp);
 		tcp.set_pointers(&eloop);
+		if(sdns::conf[sdns::SDNS_USER] != "")
+			drop_root(sdns::conf[sdns::SDNS_USER]);
+		else
+			dout() << "SDNS_USER not set, not changing uid/gid";
 		std::thread eventloop_th(std::ref(eloop));
 		std::thread tcp_th(std::ref(tcp));
 		while(true) {
@@ -69,7 +73,8 @@ int daemon_main()
 		eventloop_th.join();
 		tcp_th.join();
 	} catch(const e_exception &e) {
-		eout() << "Error at main(): " << e << " errno was: " << strerror_rp(errno);
+		eout() << "Error at main(): " << e;
+		eout() << "errno was: " << errno << ": " << strerror_rp(errno);
 		return EXIT_FAILURE;
 	}
 	return EXIT_SUCCESS;

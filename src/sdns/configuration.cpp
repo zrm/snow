@@ -63,6 +63,7 @@ configuration::configuration()
 	assign_value(STATIC_RECORDS_FILE, "/etc/sdns/local.names");
 	assign_value(DNS_FORWARDERS_DIR, "/etc/sdns/forwarders");
 #endif
+	assign_value(SDNS_USER, "");
 	assign_value(BIND4_ADDRS, std::vector<uint32_t>(1, htonl(INADDR_LOOPBACK)));
 	assign_value(BIND6_ADDRS, std::vector<in6_addr>(1, in6addr_loopback));
 	assign_value(RETRIES_PER_NAMESERVER_ADDR, 4);

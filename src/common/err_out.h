@@ -195,6 +195,11 @@ struct e_invalid_input : public e_exception
 	e_invalid_input() : e_exception("invalid input") {}
 	e_invalid_input(const std::string s) : e_exception(s, "invalid input") {}
 };
+struct e_invalid_state : public e_exception
+{
+	e_invalid_state() : e_exception("invalid state") {}
+	e_invalid_state(const std::string s) : e_exception(s, "invalid state") {}
+};
 struct e_resource_exhaustion: public e_exception
 {
 	e_resource_exhaustion() : e_exception("resource exhaustion") {}

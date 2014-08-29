@@ -43,6 +43,7 @@
 #ifndef DAEMON_H
 #define DAEMON_H
 #include<cstdint>
+#include<string>
 
 
 int daemon_start(int (*dmain)(), const char *daemon_name);
@@ -60,5 +61,6 @@ public:
 
 os_event wait_for_os_event();
 void register_signals();
+void drop_root(const std::string & newuser);
 
 #endif // DAEMON_H

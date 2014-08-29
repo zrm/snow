@@ -7,10 +7,13 @@ INSTALL?=install
 SBIN?=/usr/sbin
 SNOWCONFDIR?=/etc/snow
 SNOWVAR?=/var/lib/snow
+SNOW_USER?=snowd
 SDNSCONFDIR?=/etc/sdns
 SDNSFWDDIR?=/etc/sdns/forwarders
 SDNS_ROOTHINTS?=sdns/root.names
 SDNS_LOCALNAMES?=sdns/local.names
+SDNS_USER?=sdnsd
+NOLOGIN?=/usr/sbin/nologin
 
 SNOW_LDFLAGS=-lssl -lcrypto
 ifdef NO_NATPMP

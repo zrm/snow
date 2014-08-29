@@ -84,14 +84,6 @@ int daemon_main()
 		}
 		return EXIT_FAILURE;
 	}
-	// TODO: privilege separation
-	// (set up any other sockets or anything needing privs)
-	// (drop privileges here)
-	// the main sticking point is currently that if local IP addrs change and DTLS_BIND[6]_PORT is privileged it will need to be bound again to the new address
-	// a sensible solution may be to open a socketpair and then fork(),
-		// with one process retaining root or CAP_NET_BIND_SERVICE [see: http://www.lst.de/~okir/blackhats/node125.html]
-		// then process with privileges registers with OS (e.g. NETLINK) to be notified if IP addr changes and sends sockets to other process,
-		// the other drops all privileges and does everything else
 
 	try { tls_conn::tlsInit();	}
 	catch(const e_not_found &e) {
@@ -102,12 +94,25 @@ int daemon_main()
 		return EXIT_FAILURE;
 	}
 
+	// bind ports, set up tun interface, etc.
 	worker_thread io; // general slow IO thread (for e.g. async writing to filesystem)
 	dtls_dispatch_thread dispatch(&io);
 	dht d_h_t(&dispatch, &io);
 	nameserv ns(std::move(nameserv_sock), &d_h_t, &dispatch);
 	d_h_t.set_pointers(&ns);
 	dispatch.set_pointers(&d_h_t, &ns);
+	
+	// finished with privileged operations
+	if(snow::conf[snow::SNOW_USER] != "") {
+		try {
+			drop_root(snow::conf[snow::SNOW_USER]);
+		} catch(const e_exception & e) {
+			eout() << "Failed to drop root: " << e;
+			return EXIT_FAILURE;
+		}
+	} else {
+		dout() << "SNOW_USER not set, not changing uid/gid";
+	}
 	
 	// do all the things!
 	std::thread io_thread(std::ref(io));
@@ -119,8 +124,6 @@ int daemon_main()
 		/*os_event event = */ wait_for_os_event();
 		// handle next event: right now all events mean "do shutdown" so just break and shutdown
 		break;
-		// TODO: implement os_event::reload as reread config file?
-			// that's going to be a lot of work
 	}
 	dout() << "nameserv shutdown";
 	ns.shutdown_thread();

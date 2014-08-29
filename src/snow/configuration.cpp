@@ -92,6 +92,7 @@ configuration::configuration()
 	assign_value(VIRTUAL_INTERFACE, "snow0");
 	assign_value(ADDRESS_ASSIGNMENT_FILE, "/var/lib/snow/address_assignments");
 	assign_value(PERMANENT_ADDRESS_ASSIGNMENT_FILE, "/etc/snow/permanent_address_assignments");
+	assign_value(SNOW_USER, "");
 #endif
 	assign_value(NATPOOL_NETWORK, "172.16.0.0");
 	assign_value(PUBLIC_IPV4_ADDRS, std::vector<uint32_t>());
@@ -154,13 +155,13 @@ void configuration::sanity_check_values()
 		if(conf[DTLS_BIND_PORT] == 0) {
 			uint16_t port = ntohs(get_random_port());
 			iout() << "Assigned DTLS_BIND_PORT random port " << port;
-			conffile << "\nDTLS_BIND_PORT=" << port;
+			conffile << "\nDTLS_BIND_PORT=" << port << '\n';
 			assign_value(DTLS_BIND_PORT, port);
 		}
 		if(conf[DTLS_OUTGOING_PORT] == 0) {
 			uint16_t port = ntohs(get_random_port());
 			iout() << "Assigned DTLS_OUTGOING_PORT random port " << port;
-			conffile << "\nDTLS_OUTGOING_PORT=" << port;
+			conffile << "\nDTLS_OUTGOING_PORT=" << port << '\n';
 			assign_value(DTLS_OUTGOING_PORT, port);
 		}
 	}

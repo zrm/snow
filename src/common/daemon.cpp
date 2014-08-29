@@ -41,6 +41,7 @@
 */
 
 #include "daemon.h"
+#include "err_out.h"
 #include<mutex>
 #include<condition_variable>
 #include<queue>
@@ -53,6 +54,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <pwd.h>
 #endif
 
 
@@ -202,5 +204,37 @@ void register_signals()
 	sigaction(SIGINT, &signal_action, nullptr);
 	sigaction(SIGUSR1, &signal_action, nullptr);
 	// TODO: maybe add some other os_event objects for different signals
+#endif
+}
+
+void drop_root(const std::string & newuser)
+{
+#ifndef WINDOWS
+	// the number of ways disaster can erupt if you try to change from a non-root uid to a different non-root uid are numerous
+	// so the only supported configurations are:
+		// 1) start as root, do what needs to be done, change to non-root
+		// 2) start as non-root with only what capabilities may be necessary and never change uid (in which case this function does nothing and need not be called)
+	passwd *name = getpwnam(newuser.c_str());
+	if(name == nullptr)
+		throw check_err_exception(std::string("failed to get uid of ") + newuser);
+	if(getuid() != 0 && getuid() != name->pw_uid) {
+		wout() << "Not changing uid to " << newuser << " (" << name->pw_uid << ") because already not root";
+		return;
+	}
+	if(getgid() != name->pw_gid)
+		check_err(setgid(name->pw_gid), "setgid()");
+	else
+		dout() << "already gid " << name->pw_gid;
+	if(getuid() != name->pw_uid)
+		check_err(setuid(name->pw_uid), "setuid()");
+	else
+		dout() << "already uid " << name->pw_uid;
+	dout() << "uid/gid is now " << getuid() << '/' << getgid();
+	if(getuid() != name->pw_uid || getgid() != name->pw_gid)
+		throw e_invalid_state("setuid/setgid claimed success but uid/gid not changed");
+	if(setuid(0) != -1 || setgid(0) != -1) {
+		eout() << "Was able to reclaim root privileges after dropping root, program terminated";
+		abort();
+	}
 #endif
 }
