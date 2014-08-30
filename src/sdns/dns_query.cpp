@@ -156,6 +156,7 @@ void dns_query::retry_query()
 	dns_query& back = *queries().back();
 	back.flags = flags;
 	back.flags[PRIMARY] = false;
+	back.timestamp = timestamp;
 	if(sister_queries == nullptr) {
 		sister_queries.reset(new sister_query_set());
 		sister_queries->insert(queries()[index]);
