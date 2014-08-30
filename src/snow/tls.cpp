@@ -222,23 +222,23 @@ static DH *get_dhparams()
 
 	// oops, failed to read from file
 	iout() << "Could not access DH params file " << snow::conf[snow::DH_PARAMS_FILE] << ", using SKIP params";
-	std::thread th([]() {
-		int codes;
-		DH* params;
-		do {
-			iout() << "Background generating new DH params for next time";
-			params = DH_generate_parameters(4096, 2, nullptr, nullptr);
-		} while(DH_check(params, &codes) == 0);
-		FILE* param_outfile = fopen(snow::conf[snow::DH_PARAMS_FILE].c_str(), "w");
-		if(param_outfile != nullptr) {
+	FILE* param_outfile = fopen(snow::conf[snow::DH_PARAMS_FILE].c_str(), "w");
+	if(param_outfile != nullptr) {
+		iout() << "Background generating new DH params for next time (this may peg your CPU for a few minutes)";
+		std::thread th([param_outfile]() {
+			int codes;
+			DH* params;
+			do {
+				params = DH_generate_parameters(4096, 2, nullptr, nullptr);
+			} while(DH_check(params, &codes) == 0);
 			dout() << "Generated new DH params, writing to file " << snow::conf[snow::DH_PARAMS_FILE];
 			PEM_write_DHparams(param_outfile, params);
 			fclose(param_outfile);
-		} else {
-			eout_perr() << "Generated new DH params but could not write to " << snow::conf[snow::DH_PARAMS_FILE];
-		}
-	});
-	th.detach();
+		});
+		th.detach();
+	} else {
+		eout_perr() << "Could not open DH params file for write to generate new params";
+	}
 
 	// 4096-bit SKIP DH params: use if no file is available
 	static const uint8_t dh4096_p[]={
