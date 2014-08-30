@@ -354,7 +354,7 @@ void pollvector<T>::reorder_remove(size_t remove_index)
 	if(remove_index != data.size()-1) {
 		data.back().setepidx(remove_index);
 		if(data.back().sock >= 0 && data.back().epevents.events != 0) {
-			if(epoll_ctl(epfd, EPOLL_CTL_MOD, data.back().sock, &data[remove_index].epevents) < 0) {
+			if(epoll_ctl(epfd, EPOLL_CTL_MOD, data.back().sock, &data.back().epevents) < 0) {
 				dout_perr() << pvname << " epoll_ctl failed to move existing last socket to remove_index";
 				data.back().event_fn(data.size()-1, pvevent::error, sock_err(errno));
 			}
