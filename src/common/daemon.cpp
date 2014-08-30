@@ -162,9 +162,12 @@ int daemon_start(int (*dmain)(), const char *daemon_name)
 		return EXIT_SUCCESS;
 	}
 	// redirect stdin/stdout/stderr to /dev/null, from here we use syslog
-	freopen("/dev/null", "r", stdin);
-	freopen("/dev/null", "w", stdout);
-	freopen("/dev/null", "w", stderr);
+	if(freopen("/dev/null", "r", stdin) == nullptr)
+		wout_perr() << "Failed to reopen stdin as /dev/null";
+	if(freopen("/dev/null", "w", stdout) == nullptr)
+		wout_perr() << "Failed to reopen stdout as /dev/null";
+	if(freopen("/dev/null", "w", stderr) == nullptr)
+		wout_perr() << "Failed to reopen stderr as /dev/null";
 	xout_static::enable_syslog(daemon_name);
 	umask(S_IWGRP | S_IWOTH);
 	check_err(setsid(), "setsid() failed to create new session");
