@@ -519,6 +519,7 @@ void vnet::add_peer(dtls_ptr&& conn, snow_hello&& hello, std::vector<packet_buf>
 		pinit->shutdown_connection(std::move(conn), std::move(peer_addrs), srcprt);
 		return;
 	}
+	dout() << "Connected " << fingerprint << " at " << conn->get_peer() << " natip " << ss_ipaddr(nbo_nat_ip);
 	dispatch->add_peer_visible_ipaddr(visible_ip);
 	std::shared_ptr<vnet_peer> newpeer = *peers.emplace(std::make_shared<vnet_peer>(std::move(conn), std::min(peer_mtu, tun.get_mtu()), nbo_nat_ip, std::move(peer_addrs), dhtprt, srcprt, visible_ip, std::move(hello))).first;
 	newpeer->self = newpeer;
@@ -771,7 +772,7 @@ void vnet::handle_dtls_error(vnet_peer& peer, ssize_t status)
 void vnet::cleanup(vnet_peer &remove)
 {
 	const hashkey &remove_fingerprint = remove.conn->get_hashkey();
-	dout() << "vnet removing peer " << remove_fingerprint << " at " << ss_ipaddr(remove.nat_addr);
+	dout() << "Disconnected " << remove_fingerprint << " at " << remove.conn->get_peer() << " natip " << ss_ipaddr(remove.nat_addr);
 	uint32_t nbo_nat_addr = remove.nat_addr;
 	if(nbo_nat_addr != 0) {
 		// TODO: address is still in grace period here, maybe let nameserv keep responding with it and just initiate reconnect if there is a query?

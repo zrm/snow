@@ -46,7 +46,7 @@
 #include<winsock2.h>
 #else
 #include<arpa/inet.h>
-#ifdef __linux
+#ifdef __linux__
 #include<endian.h>
 #else
 #include<sys/endian.h>

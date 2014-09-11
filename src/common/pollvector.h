@@ -43,7 +43,7 @@
 #ifndef POLLVECTOR_H
 #define POLLVECTOR_H
 #include<cstdint>
-#ifdef __linux
+#ifdef __linux__
 #define PV_USE_EPOLL
 #endif
 #ifdef WINSOCK

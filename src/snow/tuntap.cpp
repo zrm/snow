@@ -49,7 +49,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <net/if.h>
-#ifdef __linux
+#ifdef __linux__
 #include <linux/if_tun.h>
 #else
 #include <net/if_tun.h>
@@ -221,7 +221,7 @@ tuntap::tuntap() : mtu(1419)
 		throw check_err_exception("VIRTUAL_INTERFACE name is too long", false);
 	strcpy(ifr.ifr_name, snow::conf[snow::VIRTUAL_INTERFACE].c_str());
 	check_err(fcntl(fd, F_SETFL, O_NONBLOCK), "setting tuntap socket to non-blocking");
-#ifdef __linux
+#ifdef __linux__
 	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
 	check_err(ioctl(fd, TUNSETIFF, (void*) &ifr), "opening tun/tap interface");
 #endif
