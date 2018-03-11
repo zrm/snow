@@ -53,10 +53,12 @@ install: all
 	$(INSTALL) -m 0700 -o $(SNOW_USER) -g $(SNOW_USER) -d $(SNOWVAR)
 	$(INSTALL) -d $(SDNSCONFDIR)
 	$(INSTALL) -d $(SDNSFWDDIR)
+	$(INSTALL) -d $(SBIN)
 	$(INSTALL) -m 0755 -o root -g root $(SNOW_BINARY) $(SBIN)
 	$(INSTALL) -m 0755 -o root -g root $(SDNS_BINARY) $(SBIN)
 	$(INSTALL) -m 0444 -o root -g root $(SDNS_ROOTHINTS) $(SDNSCONFDIR)
 	cp -n -- $(SDNS_LOCALNAMES) $(SDNSCONFDIR)
+	$(INSTALL) -d $(SNOWVAR)
 	$(INSTALL) -m 0600 -o $(SNOW_USER) -g $(SNOW_USER) ../known_peers $(SNOWVAR)
 	echo >> $(SNOWCONFDIR)/snow.conf
 	echo SNOW_USER=$(SNOW_USER) >> $(SNOWCONFDIR)/snow.conf
@@ -72,6 +74,3 @@ uninstall:
 
 clean:
 	rm -f -- */*.o */.depend $(NSS_SNOW_BINARY) $(NSS_SNOW_TEST) $(SNOW_BINARY) $(SDNS_BINARY)
-
-
- 
